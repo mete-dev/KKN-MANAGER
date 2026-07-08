@@ -1,0 +1,6 @@
+{
+  "name": "KKN Manager",
+  "description": "Aplikasi manajemen KKN untuk memantau keuangan, peserta, tugas, dan jadwal kegiatan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
