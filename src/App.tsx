@@ -7,10 +7,80 @@ import { FinanceView } from './components/FinanceView';
 import { TasksView } from './components/TasksView';
 import { CalendarView } from './components/CalendarView';
 import { LogActivityView } from './components/LogActivityView';
-import { LayoutDashboard, Users, Wallet, CheckSquare, CalendarDays, Activity, Menu, X, LogOut, Loader2, Database, ClipboardCheck } from 'lucide-react';
+import { LayoutDashboard, Users, Wallet, CheckSquare, CalendarDays, Activity, Menu, X, LogOut, Loader2, Database, ClipboardCheck, KeyRound } from 'lucide-react';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { BackupRestoreView } from './components/BackupRestoreView';
 import AttendanceView from './components/AttendanceView';
+
+function ChangePasswordModal({ isOpen, onClose, getToken }: { isOpen: boolean, onClose: () => void, getToken: () => Promise<string | null> }) {
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ oldPassword, newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(data.message);
+        setTimeout(() => {
+          onClose();
+          setOldPassword('');
+          setNewPassword('');
+          setSuccess('');
+        }, 2000);
+      } else {
+        setError(data.error);
+      }
+    } catch (e) {
+      setError('Terjadi kesalahan saat mengubah password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <h2 className="text-lg font-semibold text-gray-900">Ubah Sandi</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-100"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Sandi Lama</label>
+            <input required type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} className="w-full p-2 border border-gray-200 rounded-lg outline-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Sandi Baru</label>
+            <input required type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full p-2 border border-gray-200 rounded-lg outline-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100 text-sm" />
+          </div>
+          {error && <p className="text-xs font-medium text-red-500">{error}</p>}
+          {success && <p className="text-xs font-medium text-emerald-500">{success}</p>}
+          <div className="flex justify-end pt-2">
+            <button type="submit" disabled={loading} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors flex items-center">
+              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Simpan
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function AppContent() {
   const { user, loading, signIn, logOut, getToken } = useAuth();
@@ -23,6 +93,7 @@ function AppContent() {
   const [events, setEvents] = useState<KKNEvent[]>([]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
 
   const [loginPhone, setLoginPhone] = useState('');
@@ -180,6 +251,10 @@ function AppContent() {
               <p className="text-xs text-gray-500 truncate">{user?.role || 'Anggota'}</p>
             </div>
           </div>
+          <button onClick={() => setIsPasswordModalOpen(true)} className="w-full flex items-center px-4 py-3 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors mb-1">
+            <KeyRound className="w-5 h-5 mr-3" />
+            Ubah Sandi
+          </button>
           <button onClick={logOut} className="w-full flex items-center px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors">
             <LogOut className="w-5 h-5 mr-3" />
             Keluar
@@ -218,6 +293,8 @@ function AppContent() {
           </div>
         </div>
       </main>
+
+      <ChangePasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} getToken={getToken} />
     </div>
   );
 }

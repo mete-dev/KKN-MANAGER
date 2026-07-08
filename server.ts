@@ -104,6 +104,25 @@ async function startServer() {
     }
   });
 
+  app.put("/api/auth/password", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { oldPassword, newPassword } = req.body;
+      const user = await db.select().from(users).where(eq(users.id, req.user!.id));
+      if (user.length === 0) return res.status(404).json({ error: "User tidak ditemukan" });
+      
+      const valid = await bcrypt.compare(oldPassword, user[0].password);
+      if (!valid) return res.status(401).json({ error: "Password lama salah" });
+      
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await db.update(users).set({ password: hashedPassword }).where(eq(users.id, req.user!.id));
+      await logActivity(req.user!.id, "Ubah Sandi", "Pengguna mengubah kata sandi mereka");
+      res.json({ message: "Password berhasil diubah" });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal mengubah password" });
+    }
+  });
+
   // --- PARTICIPANTS (Users) ---
   app.get("/api/participants", requireAuth, async (req: AuthRequest, res) => {
     try {
