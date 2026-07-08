@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
-import { db } from "./src/db/index.ts";
+import { db, pool } from "./src/db/index.ts";
 import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from "./src/db/schema.ts";
 import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";

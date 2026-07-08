@@ -204,7 +204,9 @@ function AppContent() {
       if (item.id === 'dashboard' || item.id === 'log') return true;
       return userPerms[item.id] !== 'none';
     }),
-    ...(user?.nim === '223125416' ? [{ path: '/backup-restore', label: 'Backup & Restore', icon: Database, id: 'backup' }] : [])
+    ...(user?.nim === '223125416' ? [
+      { path: '/backup-restore', label: 'Backup & Restore', icon: Database, id: 'backup' }
+    ] : [])
   ];
 
   return (

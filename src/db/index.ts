@@ -13,7 +13,7 @@ export const createPool = () => {
   });
 };
 
-const pool = createPool();
+export const pool = createPool();
 
 pool.on('error', (err) => {
   console.error('Unexpected error on idle SQL pool client:', err);
