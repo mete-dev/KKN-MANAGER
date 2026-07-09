@@ -289,13 +289,16 @@ export default function AttendanceView({ getToken, participants }: Props) {
   // Export a single daily session to Excel
   const exportSessionToExcel = (session: AttendanceSession, records: AttendeeRecord[]) => {
     try {
-      const data = records.map((record, index) => ({
-        'No': index + 1,
-        'Nama Lengkap': record.name,
-        'Tipe Peserta': record.userId ? 'Anggota KKN' : 'Tamu / Pembicara',
-        'Status Kehadiran': record.status,
-        'Catatan Keterangan': record.notes || '-'
-      }));
+      const data = records.map((record, index) => {
+        const participant = participants.find(p => p.id === record.userId);
+        return {
+          'No': index + 1,
+          'Nama Lengkap': record.name,
+          'Jabatan': participant ? participant.role : 'Tamu / Pembicara',
+          'Status Kehadiran': record.status,
+          'Catatan Keterangan': record.notes || '-'
+        };
+      });
 
       const ws = XLSX.utils.json_to_sheet([]);
       
@@ -398,7 +401,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
       doc.setFontSize(9);
       doc.text('No', 17, y + 5);
       doc.text('Nama Lengkap', 28, y + 5);
-      doc.text('Tipe Peserta', 100, y + 5);
+      doc.text('Jabatan', 100, y + 5);
       doc.text('Status', 135, y + 5);
       doc.text('Catatan Keterangan', 155, y + 5);
 
@@ -416,7 +419,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
           doc.setFont('helvetica', 'bold');
           doc.text('No', 17, y + 5);
           doc.text('Nama Lengkap', 28, y + 5);
-          doc.text('Tipe Peserta', 100, y + 5);
+          doc.text('Jabatan', 100, y + 5);
           doc.text('Status', 135, y + 5);
           doc.text('Catatan Keterangan', 155, y + 5);
           doc.setTextColor(51, 65, 85);
@@ -437,7 +440,10 @@ export default function AttendanceView({ getToken, participants }: Props) {
         const displayName = record.name.length > 30 ? record.name.substring(0, 28) + '..' : record.name;
         doc.text(displayName, 28, y + 4);
         
-        doc.text(record.userId ? 'Anggota KKN' : 'Tamu Undangan', 100, y + 4);
+        const participant = participants.find(p => p.id === record.userId);
+        const roleText = participant ? participant.role : 'Tamu Undangan';
+        const displayRole = roleText.length > 15 ? roleText.substring(0, 13) + '..' : roleText;
+        doc.text(displayRole, 100, y + 4);
 
         if (record.status === 'Hadir') doc.setTextColor(16, 185, 129);
         else if (record.status === 'Sakit') doc.setTextColor(59, 130, 246);
@@ -1006,13 +1012,24 @@ export default function AttendanceView({ getToken, participants }: Props) {
                           </span>
                         )}
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Tambahkan keterangan (misal: sakit demam, izin telat)"
-                        value={record.notes || ''}
-                        onChange={e => handleRecordNotesChange(index, e.target.value)}
-                        className="w-full mt-1 bg-transparent border-none p-0 text-[11px] text-gray-500 focus:ring-0 outline-none italic placeholder-gray-400"
-                      />
+                      
+                      {record.status !== 'Hadir' ? (
+                        <input
+                          type="text"
+                          placeholder={`Keterangan ${record.status} (Wajib diisi jika ada)...`}
+                          value={record.notes || ''}
+                          onChange={e => handleRecordNotesChange(index, e.target.value)}
+                          className="w-full mt-1.5 bg-white border border-amber-300 rounded px-2 py-1 text-[11px] text-gray-700 focus:ring-1 focus:ring-amber-500 outline-none"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="Tambahkan keterangan (opsional)"
+                          value={record.notes || ''}
+                          onChange={e => handleRecordNotesChange(index, e.target.value)}
+                          className="w-full mt-1 bg-transparent border-none p-0 text-[11px] text-gray-500 focus:ring-0 outline-none italic placeholder-gray-400"
+                        />
+                      )}
                     </div>
 
                     {/* Status Toggles and delete button */}
@@ -1201,7 +1218,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase">
                     <th className="p-3">Nama Lengkap</th>
-                    <th className="p-3">Tipe</th>
+                    <th className="p-3">Jabatan</th>
                     <th className="p-3 text-center">Status Kehadiran</th>
                     <th className="p-3">Keterangan Catatan</th>
                   </tr>
@@ -1214,14 +1231,16 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     if (record.status === 'Izin') badgeClass = 'text-amber-700 bg-amber-50 border border-amber-100';
                     if (record.status === 'Alfa') badgeClass = 'text-red-700 bg-red-50 border border-red-100';
 
+                    const participant = participants.find(p => p.id === record.userId);
+
                     return (
                       <tr key={index} className="hover:bg-gray-50/40">
                         <td className="p-3 font-semibold text-gray-900">{record.name}</td>
                         <td className="p-3">
-                          {record.userId ? (
-                            <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-bold">Anggota</span>
+                          {participant ? (
+                            <span className="text-[10px] text-gray-600 px-2 py-0.5 rounded-full font-bold">{participant.role}</span>
                           ) : (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">Tamu</span>
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">Tamu / Pembicara</span>
                           )}
                         </td>
                         <td className="p-3 text-center">

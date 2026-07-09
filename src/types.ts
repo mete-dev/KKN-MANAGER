@@ -24,7 +24,7 @@ export interface Transaction {
   description: string;
   amount: number;
   type: 'income' | 'expense';
-  category: 'kas' | 'proker';
+  category: 'kas' | 'proker' | 'konsumsi';
   proofLink: string;
   status: 'active' | 'cancelled';
 }

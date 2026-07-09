@@ -1,6 +1,6 @@
 import { useState, FormEvent, useMemo, useEffect } from 'react';
 import { Transaction } from '../types';
-import { Plus, Edit2, ArrowUpCircle, ArrowDownCircle, Wallet, Briefcase, ExternalLink, X, Download, History, Loader2 } from 'lucide-react';
+import { Plus, Edit2, ArrowUpCircle, ArrowDownCircle, Wallet, Briefcase, ExternalLink, X, Download, History, Loader2, Coffee } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import { useAuth } from '../lib/AuthContext';
 
@@ -24,7 +24,7 @@ export function FinanceView({ transactions, setTransactions, getToken }: Props) 
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [type, setType] = useState<'income' | 'expense'>('expense');
-  const [activeTab, setActiveTab] = useState<'kas' | 'proker'>('kas');
+  const [activeTab, setActiveTab] = useState<'kas' | 'proker' | 'konsumsi'>('kas');
   const [proofLink, setProofLink] = useState('');
 
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -130,7 +130,7 @@ export function FinanceView({ transactions, setTransactions, getToken }: Props) 
       Tanggal: t.date,
       Deskripsi: t.description,
       Tipe: t.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
-      Kategori: t.category === 'kas' ? 'Kas' : 'Proker',
+      Kategori: t.category === 'kas' ? 'Kas Peserta' : t.category === 'proker' ? 'Program Kerja' : 'Konsumsi',
       Nominal: t.amount,
       Status: t.status === 'active' ? 'Aktif' : 'Dibatalkan',
       LinkBukti: t.proofLink
@@ -178,13 +178,19 @@ export function FinanceView({ transactions, setTransactions, getToken }: Props) 
             >
               <Briefcase className="w-4 h-4" /> Program Kerja
             </button>
+            <button 
+              onClick={() => setActiveTab('konsumsi')} 
+              className={`flex-1 sm:px-6 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'konsumsi' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Coffee className="w-4 h-4" /> Konsumsi
+            </button>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
-          <p className="text-sm font-medium text-gray-500">Total Saldo {activeTab === 'kas' ? 'Kas' : 'Proker'}</p>
+          <p className="text-sm font-medium text-gray-500">Total Saldo {activeTab === 'kas' ? 'Kas Peserta' : activeTab === 'proker' ? 'Program Kerja' : 'Konsumsi'}</p>
           <p className={`text-2xl font-bold mt-1.5 ${balance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
             Rp {balance.toLocaleString('id-ID')}
           </p>
@@ -320,7 +326,7 @@ export function FinanceView({ transactions, setTransactions, getToken }: Props) 
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-100 flex-shrink-0">
-              <h3 className="font-semibold text-gray-900">Catat Transaksi {activeTab === 'kas' ? 'Kas' : 'Proker'} Baru</h3>
+              <h3 className="font-semibold text-gray-900">Catat Transaksi {activeTab === 'kas' ? 'Kas Peserta' : activeTab === 'proker' ? 'Program Kerja' : 'Konsumsi'} Baru</h3>
               <button onClick={() => setIsAddModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
             </div>
             <div className="p-4 overflow-y-auto">

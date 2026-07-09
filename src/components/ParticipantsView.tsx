@@ -1,6 +1,6 @@
 import { useState, FormEvent, useMemo, ChangeEvent, DragEvent } from 'react';
 import { Participant } from '../types';
-import { Trash2, Users, Edit2, Plus, X, Download, FileSpreadsheet, Upload, AlertTriangle } from 'lucide-react';
+import { Trash2, Users, Edit2, Plus, X, Download, FileSpreadsheet, Upload, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
 import * as xlsx from 'xlsx';
 import { useAuth } from '../lib/AuthContext';
 
@@ -38,6 +38,28 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
   const [importPreview, setImportPreview] = useState<any[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+
+  const [sortField, setSortField] = useState<'name' | 'role'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const sortedParticipants = useMemo(() => {
+    return [...participants].sort((a, b) => {
+      const aVal = String(a[sortField] || '').toLowerCase();
+      const bVal = String(b[sortField] || '').toLowerCase();
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [participants, sortField, sortOrder]);
+
+  const handleSort = (field: 'name' | 'role') => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const handleDownloadTemplate = () => {
     const headers = [
@@ -424,17 +446,27 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
             <thead>
               <tr className="bg-gray-50/50">
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">NIM</th>
-                <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nama</th>
-                <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Jabatan</th>
+                <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('name')}>
+                  <div className="flex items-center gap-1">
+                    Nama
+                    {sortField === 'name' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                  </div>
+                </th>
+                <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('role')}>
+                  <div className="flex items-center gap-1">
+                    Jabatan
+                    {sortField === 'role' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
+                  </div>
+                </th>
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">No. WhatsApp</th>
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {participants.length === 0 ? (
+              {sortedParticipants.length === 0 ? (
                 <tr><td colSpan={6} className="p-8 text-center text-sm text-gray-500">Belum ada anggota terdaftar.</td></tr>
-              ) : participants.map(p => (
+              ) : sortedParticipants.map(p => (
                 <tr key={p.id} className="text-sm hover:bg-gray-50/50 transition-colors group">
                   <td className="p-4 font-mono text-xs text-gray-600">{p.nim || '-'}</td>
                   <td className="p-4 font-medium text-gray-900">{p.name}</td>

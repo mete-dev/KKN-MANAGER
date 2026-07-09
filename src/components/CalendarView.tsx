@@ -36,6 +36,7 @@ export function CalendarView({ events, setEvents, getToken }: Props) {
 
   // Filter category state
   const [filterCategory, setFilterCategory] = useState<'semua' | 'rapat' | 'kunjungan' | 'deadline_kampus' | 'kegiatan' | 'seminar' | 'sosialisasi' | 'lainnya'>('semua');
+  const [showPastEvents, setShowPastEvents] = useState(false);
 
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault();
@@ -135,10 +136,22 @@ export function CalendarView({ events, setEvents, getToken }: Props) {
   };
 
   const filteredEvents = useMemo(() => {
-    return filterCategory === 'semua' 
+    let result = filterCategory === 'semua' 
       ? events 
       : events.filter(e => e.category === filterCategory);
-  }, [events, filterCategory]);
+
+    if (!showPastEvents) {
+      const now = new Date();
+      const todayStr = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+      result = result.filter(e => e.date >= todayStr);
+    }
+    
+    return [...result].sort((a, b) => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return (a.time || '00:00').localeCompare(b.time || '00:00');
+    });
+  }, [events, filterCategory, showPastEvents]);
 
   const getCategoryStyles = (cat?: string) => {
     switch(cat) {
@@ -208,6 +221,18 @@ export function CalendarView({ events, setEvents, getToken }: Props) {
         </div>
         
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-sm">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 font-medium whitespace-nowrap">
+              <input 
+                type="checkbox" 
+                checked={showPastEvents}
+                onChange={(e) => setShowPastEvents(e.target.checked)}
+                className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+              />
+              Tampilkan Riwayat
+            </label>
+          </div>
+
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-sm">
             <Tag className="w-4 h-4 text-gray-400" />
             <select 

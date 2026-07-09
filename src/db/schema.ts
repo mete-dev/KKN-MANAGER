@@ -20,7 +20,7 @@ export const transactions = pgTable('transactions', {
   description: text('description').notNull(),
   amount: integer('amount').notNull(),
   type: text('type').notNull(), // 'income' | 'expense'
-  category: text('category').notNull().default('kas'), // 'kas' | 'proker'
+  category: text('category').notNull().default('kas'), // 'kas' | 'proker' | 'konsumsi'
   proofLink: text('proof_link').notNull().default(''), // Google Drive link
   status: text('status').notNull().default('active'), // 'active' | 'cancelled'
   createdAt: timestamp('created_at').defaultNow(),
