@@ -698,6 +698,115 @@ export default function AttendanceView({ getToken, participants }: Props) {
     doc.save(`laporan_absensi_harian_${dailyReportDate}.pdf`);
   };
 
+  // EXPORT FUNCTIONS FOR SESSION REKAP
+  const exportSessionReportToExcel = (session: any, records: any[]) => {
+    if (!session || records.length === 0) {
+      alert('Tidak ada data rekap presensi untuk diekspor.');
+      return;
+    }
+    const excelData = records.map((record, index) => {
+      const p = participants.find(part => part.id === record.userId);
+      return {
+        'No': index + 1,
+        'Nama Lengkap': record.name,
+        'NIM': p?.nim || '-',
+        'Jabatan / Divisi': p?.role || 'Tamu / Pembicara',
+        'Status Kehadiran': record.status || 'Belum Absen',
+        'Keterangan Catatan': record.notes || '-'
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet([]);
+    XLSX.utils.sheet_add_aoa(ws, [
+      [`REKAPITULASI PRESENSI KEGIATAN: ${session.title.toUpperCase()}`],
+      [`Tanggal Kegiatan: ${new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`],
+      [`Catatan Sesi: ${session.notes || '-'}`],
+      [`Dicetak pada: ${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')}`],
+      []
+    ], { origin: 'A1' });
+
+    XLSX.utils.sheet_add_json(ws, excelData, { origin: 'A6', skipHeader: false });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rekap Presensi');
+    
+    const cleanTitle = session.title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    XLSX.writeFile(wb, `rekap_presensi_${cleanTitle}.xlsx`);
+  };
+
+  const exportSessionReportToPDF = (session: any, records: any[]) => {
+    if (!session || records.length === 0) {
+      alert('Tidak ada data rekap presensi untuk diekspor.');
+      return;
+    }
+    const doc = new jsPDF();
+    doc.setFillColor(16, 185, 129); // Emerald
+    doc.rect(0, 0, 210, 36, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    const titleText = `REKAP PRESENSI: ${session.title.toUpperCase()}`;
+    doc.text(titleText, 14, 15, { maxWidth: 180 });
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    const formattedDate = new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    doc.text(`Tanggal: ${formattedDate} | Cetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 28);
+
+    let y = 46;
+    doc.setFillColor(71, 85, 105);
+    doc.rect(14, y, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('No', 17, y + 5);
+    doc.text('Nama Lengkap', 26, y + 5);
+    doc.text('NIM', 90, y + 5);
+    doc.text('Jabatan / Divisi', 120, y + 5);
+    doc.text('Status', 165, y + 5);
+
+    doc.setTextColor(51, 65, 85);
+    doc.setFont('helvetica', 'normal');
+
+    records.forEach((record, index) => {
+      const p = participants.find(part => part.id === record.userId);
+      y += 8;
+      if (y > 275) {
+        doc.addPage();
+        y = 20;
+        doc.setFillColor(71, 85, 105);
+        doc.rect(14, y, 182, 8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.text('No', 17, y + 5);
+        doc.text('Nama Lengkap', 26, y + 5);
+        doc.text('NIM', 90, y + 5);
+        doc.text('Jabatan / Divisi', 120, y + 5);
+        doc.text('Status', 165, y + 5);
+        doc.setTextColor(51, 65, 85);
+        doc.setFont('helvetica', 'normal');
+        y += 8;
+      }
+
+      if (index % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(14, y - 1, 182, 8, 'F');
+      }
+
+      doc.setDrawColor(241, 245, 249);
+      doc.line(14, y + 7, 196, y + 7);
+
+      doc.text(String(index + 1), 17, y + 4);
+      doc.text(record.name, 26, y + 4, { maxWidth: 60 });
+      doc.text(p?.nim || '-', 90, y + 4);
+      doc.text(p?.role || 'Tamu', 120, y + 4);
+      doc.text(record.status || 'Belum Absen', 165, y + 4);
+    });
+
+    const cleanTitle = session.title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    doc.save(`rekap_presensi_${cleanTitle}.pdf`);
+  };
+
   // Filtered Sessions for Event List
   const filteredSessions = sessions.filter(session => {
     const matchesSearch = session.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1770,6 +1879,24 @@ export default function AttendanceView({ getToken, participants }: Props) {
             </div>
             
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => exportSessionReportToExcel(selectedSession, formRecords)}
+                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold py-1.5 px-3 rounded-lg text-xs transition-all flex items-center gap-1.5"
+                title="Ekspor Rekap Sesi ke Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Excel</span>
+              </button>
+
+              <button
+                onClick={() => exportSessionReportToPDF(selectedSession, formRecords)}
+                className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 font-bold py-1.5 px-3 rounded-lg text-xs transition-all flex items-center gap-1.5"
+                title="Ekspor Rekap Sesi ke PDF"
+              >
+                <FileText className="w-4 h-4 text-rose-600" />
+                <span>PDF</span>
+              </button>
+
               {selectedSession.isPermanent === 1 ? (
                 <span className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-100 px-3 py-1 rounded-full flex items-center gap-1">
                   <Lock className="w-3.5 h-3.5" /> Terkunci Permanen
