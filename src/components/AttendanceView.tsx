@@ -122,6 +122,17 @@ export default function AttendanceView({ getToken, participants }: Props) {
     return null;
   };
 
+  const getCleanNotes = (str?: string): string => {
+    if (!str) return '';
+    return str
+      .replace(/\[PHOTO:[^\]]+\]/g, '')
+      .replace(/📍\s*GPS:\s*[-\d.]+,\s*[-\d.]+/g, '')
+      .replace(/Check-(?:In|Out)\s+\d{1,2}[:.]\d{2}\s*WIB/g, '')
+      .replace(/\|\s*\|/g, '|')
+      .replace(/^[\s|]+|[\s|]+$/g, '')
+      .trim();
+  };
+
   // Active Sub Tab: 'kegiatan' | 'harian'
   const [activeSubTab, setActiveSubTab] = useState<'kegiatan' | 'harian'>('kegiatan');
 
