@@ -1,13 +1,19 @@
 {
   "buildCommand": "npm run build",
+  "functions": {
+    "api/index.cjs": {
+      "runtime": "nodejs20.x",
+      "includeFiles": "api/server.cjs"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/index.js"
+      "destination": "/api/index.cjs"
     },
     {
       "source": "/((?!api|assets|favicon.ico|.*\\..*).*)",
-      "destination": "/dist/index.html"
+      "destination": "/index.html"
     }
   ]
 }
