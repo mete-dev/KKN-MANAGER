@@ -167,7 +167,7 @@ function AppContent() {
           <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <Users className="w-8 h-8 text-emerald-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2 text-center">KKN Manager</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2 text-center">KKN Kandangan 2026</h1>
           <p className="text-sm text-gray-500 mb-8 text-center">Login untuk memantau kegiatan KKN.</p>
           
           <form onSubmit={handleAuth} className="space-y-4">
@@ -222,7 +222,7 @@ function AppContent() {
           <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center mr-3 shadow-sm">
             <span className="text-white font-bold text-lg">K</span>
           </div>
-          <h1 className="text-lg font-bold text-gray-900 tracking-tight">KKN Manager</h1>
+          <h1 className="text-lg font-bold text-gray-900 tracking-tight">KKN Kandangan 2026</h1>
           <button className="ml-auto md:hidden text-gray-500 hover:bg-gray-50 p-1 rounded-md" onClick={() => setIsMobileMenuOpen(false)}>
             <X className="w-5 h-5" />
           </button>
@@ -272,7 +272,7 @@ function AppContent() {
             <Menu className="w-6 h-6" />
           </button>
           <span className="ml-3 font-semibold text-gray-900">
-            {navItems.find(i => location.pathname.startsWith(i.path))?.label || 'KKN Manager'}
+            {navItems.find(i => location.pathname.startsWith(i.path))?.label || 'KKN Kandangan 2026'}
           </span>
         </header>
         

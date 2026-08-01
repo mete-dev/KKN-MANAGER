@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -40,7 +41,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'kkn-secret-key-123';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3025;
 
   app.use(express.json());
 
