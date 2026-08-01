@@ -49,7 +49,7 @@ app.use((req, res, next) => {
     return res.sendStatus(200);
   }
   // Normalize req.url for Vercel serverless function rewrites
-  if (req.url && !req.url.startsWith('/api/') && req.url !== '/api') {
+  if (process.env.VERCEL && req.url && !req.url.startsWith('/api/') && req.url !== '/api') {
     req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
   }
   next();
@@ -935,10 +935,38 @@ app.use(express.json());
     }
   });
 
+  const POSKO_LAT = -8.066722;
+  const POSKO_LNG = 113.08875;
+  const MAX_POSKO_RADIUS_METERS = 500;
+
+  function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   app.post("/api/attendance/:id/scan", requireAuth, async (req: AuthRequest, res) => {
     try {
       const paramId = req.params.id;
       const upperParamId = paramId.toUpperCase();
+      const { photo, location } = req.body || {};
+
+      const userId = req.user!.id;
+      const currentUser = await repositoryGetUserById(userId);
+      if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+
+      const isSuperAdminBypass = 
+        currentUser.phone === '081230486908' ||
+        currentUser.nim === '223125416' ||
+        (currentUser.role || '').toLowerCase().includes('super admin');
       
       const parseDailyQrDate = (str: string): string | null => {
         const matchWithDash = str.match(/\d{4}-\d{2}-\d{2}/);
@@ -947,6 +975,16 @@ app.use(express.json());
         if (match8Digits) return `${match8Digits[1]}-${match8Digits[2]}-${match8Digits[3]}`;
         return null;
       };
+
+      // Geofencing location check if location is provided (skipped for Super Admin bypass)
+      if (!isSuperAdminBypass && location && typeof location.lat === 'number' && typeof location.lng === 'number') {
+        const distMeters = calculateDistanceMeters(POSKO_LAT, POSKO_LNG, location.lat, location.lng);
+        if (distMeters > MAX_POSKO_RADIUS_METERS) {
+          return res.status(400).json({
+            error: "Presensi Gagal: Anda berada di luar area Posko KKN. Silakan lakukan presensi di sekitar area Posko KKN."
+          });
+        }
+      }
 
       // Check if code corresponds to daily check-in
       if (upperParamId.includes('CHECKIN')) {
@@ -964,9 +1002,6 @@ app.use(express.json());
             error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
           });
         }
-        const userId = req.user!.id;
-        const currentUser = await repositoryGetUserById(userId);
-        if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
 
         let dailySessions = await safeSelectDailySession(dateStr);
         let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
@@ -977,14 +1012,33 @@ app.use(express.json());
         }
         const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
         const displayTime = `${timeStr.slice(0,5)} WIB`;
+        
+        const gpsStr = (location && typeof location.lat === 'number' && typeof location.lng === 'number')
+          ? `📍 GPS: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
+          : '';
+        const photoStr = photo ? `[PHOTO:${photo}]` : '';
+        const noteTag = `Check-In ${displayTime}${gpsStr ? ' | ' + gpsStr : ''}${photoStr ? ' ' + photoStr : ''}`;
+
         if (existingRec.length > 0) {
           const rec = existingRec[0];
           if (rec.checkInTime && rec.checkInTime !== '-') {
             return res.status(400).json({ error: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.` });
           }
-          await safeUpdateRecord(rec.id, { status: 'Hadir', checkInTime: displayTime, notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}` });
+          await safeUpdateRecord(rec.id, {
+            status: 'Hadir',
+            checkInTime: displayTime,
+            notes: rec.notes ? `${rec.notes} | ${noteTag}` : noteTag
+          });
         } else {
-          await safeInsertRecord({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkInTime: displayTime, notes: `Check-In ${displayTime}` });
+          await safeInsertRecord({
+            id: uuidv4(),
+            sessionId,
+            userId: currentUser.id,
+            name: currentUser.name,
+            status: 'Hadir',
+            checkInTime: displayTime,
+            notes: noteTag
+          });
         }
         return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
       }
@@ -1005,9 +1059,6 @@ app.use(express.json());
             error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
           });
         }
-        const userId = req.user!.id;
-        const currentUser = await repositoryGetUserById(userId);
-        if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
 
         let dailySessions = await safeSelectDailySession(dateStr);
         let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
@@ -1018,14 +1069,32 @@ app.use(express.json());
         }
         const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
         const displayTime = `${timeStr.slice(0,5)} WIB`;
+        
+        const gpsStr = (location && typeof location.lat === 'number' && typeof location.lng === 'number')
+          ? `📍 GPS: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
+          : '';
+        const photoStr = photo ? `[PHOTO:${photo}]` : '';
+        const noteTag = `Check-Out ${displayTime}${gpsStr ? ' | ' + gpsStr : ''}${photoStr ? ' ' + photoStr : ''}`;
+
         if (existingRec.length > 0) {
           const rec = existingRec[0];
           if (rec.checkOutTime && rec.checkOutTime !== '-') {
             return res.status(400).json({ error: `Halo ${currentUser.name}, Anda sudah Check-Out pukul ${rec.checkOutTime}.` });
           }
-          await safeUpdateRecord(rec.id, { checkOutTime: displayTime, notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}` });
+          await safeUpdateRecord(rec.id, {
+            checkOutTime: displayTime,
+            notes: rec.notes ? `${rec.notes} | ${noteTag}` : noteTag
+          });
         } else {
-          await safeInsertRecord({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkOutTime: displayTime, notes: `Check-Out ${displayTime}` });
+          await safeInsertRecord({
+            id: uuidv4(),
+            sessionId,
+            userId: currentUser.id,
+            name: currentUser.name,
+            status: 'Hadir',
+            checkOutTime: displayTime,
+            notes: noteTag
+          });
         }
         return res.json({ success: true, message: `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
       }
@@ -1034,12 +1103,6 @@ app.use(express.json());
       const session = await safeSelectSessionById(sessionId);
       if (session.length === 0) {
         return res.status(404).json({ error: "Sesi absensi tidak ditemukan. Pastikan Kode / QR Code valid." });
-      }
-
-      const userId = req.user!.id;
-      const currentUser = await repositoryGetUserById(userId);
-      if (!currentUser) {
-        return res.status(404).json({ error: "Pengguna tidak ditemukan." });
       }
 
       const records = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
@@ -1278,18 +1341,21 @@ app.use(express.json());
         const { createServer: createViteServer } = await import("vite");
         const vite = await createViteServer({
           server: { middlewareMode: true },
-          appType: "spa",
+          appType: "custom",
         });
         app.use(vite.middlewares);
 
         app.use('*', async (req, res, next) => {
-          if (req.originalUrl.startsWith('/api')) return next();
+          const url = req.originalUrl;
+          if (url.startsWith('/api') || url.startsWith('/@') || url.startsWith('/src') || url.startsWith('/node_modules') || (url.includes('.') && !url.endsWith('.html'))) {
+            return next();
+          }
           try {
             const fs = await import('fs');
             const path = await import('path');
             const indexPath = path.resolve(process.cwd(), 'index.html');
             let template = fs.readFileSync(indexPath, 'utf-8');
-            template = await vite.transformIndexHtml(req.originalUrl, template);
+            template = await vite.transformIndexHtml(url, template);
             res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
           } catch (e) {
             next(e);

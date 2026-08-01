@@ -4,7 +4,7 @@ import {
   AlertCircle, UserPlus, ChevronRight, ArrowLeft, Check, X,
   FileSpreadsheet, Loader2, Save, Info, CheckCircle, FileText, Download,
   QrCode, ScanLine, Camera, Copy, RefreshCw, CheckCircle2, Sparkles, Clock,
-  LogIn, LogOut, Sun
+  LogIn, LogOut, Sun, MapPin
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import * as XLSX from 'xlsx';
@@ -68,6 +68,59 @@ export default function AttendanceView({ getToken, participants }: Props) {
     roleNorm.includes('kesekretariatan') || 
     roleNorm.includes('ketua') || 
     isSuperAdmin;
+
+  const todayWibDateStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
+  const [selectedPreviewSelfie, setSelectedPreviewSelfie] = useState<string | null>(null);
+
+  const getCurrentLocation = (): Promise<{ lat: number; lng: number; acc: number } | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            acc: pos.coords.accuracy
+          });
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    });
+  };
+
+  const captureSelfieFromVideo = (videoEl: HTMLVideoElement): string | null => {
+    try {
+      const canvas = document.createElement('canvas');
+      const maxWidth = 600;
+      const scale = maxWidth / (videoEl.videoWidth || 600);
+      canvas.width = maxWidth;
+      canvas.height = (videoEl.videoHeight || 450) * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.7);
+    } catch {
+      return null;
+    }
+  };
+
+  const parseGpsCoords = (str?: string) => {
+    if (!str) return null;
+    const match = str.match(/📍\s*GPS:\s*([-\d.]+),\s*([-\d.]+)/);
+    if (match) return { lat: match[1], lng: match[2] };
+    return null;
+  };
+
+  const parsePhotoUrl = (str?: string) => {
+    if (!str) return null;
+    const match = str.match(/\[PHOTO:(data:image\/[^\]]+)\]/);
+    if (match) return match[1];
+    return null;
+  };
 
   // Active Sub Tab: 'kegiatan' | 'harian'
   const [activeSubTab, setActiveSubTab] = useState<'kegiatan' | 'harian'>('kegiatan');
@@ -341,10 +394,25 @@ export default function AttendanceView({ getToken, participants }: Props) {
         throw new Error('Kode / QR Code tidak valid.');
       }
 
+      let selfieDataUrl: string | null = null;
+      const videoEl = document.querySelector('#reader video') as HTMLVideoElement;
+      if (videoEl && videoEl.readyState >= 2) {
+        selfieDataUrl = captureSelfieFromVideo(videoEl);
+      }
+
+      const locationData = await getCurrentLocation();
+
       const token = await getToken();
       const res = await fetch(`/api/attendance/${encodeURIComponent(targetSessionId)}/scan`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          photo: selfieDataUrl,
+          location: locationData
+        })
       });
 
       const contentType = res.headers.get('content-type');
@@ -1368,7 +1436,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       setIsScannerOpen(true);
                       setScanSuccessResult(null);
                       setScanError(null);
-                      setManualCode('CHECKIN');
+                      setManualCode(`CHECKIN-${todayWibDateStr}`);
                     }}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
@@ -1420,7 +1488,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       setIsScannerOpen(true);
                       setScanSuccessResult(null);
                       setScanError(null);
-                      setManualCode('CHECKOUT');
+                      setManualCode(`CHECKOUT-${todayWibDateStr}`);
                     }}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
@@ -1583,42 +1651,61 @@ export default function AttendanceView({ getToken, participants }: Props) {
                             {(() => {
                               const hasNotes = !!row.notes && row.notes !== '-';
                               const isCheckInScan = row.checkInTime !== '-';
-                              
-                              if (row.status !== 'Hadir') {
-                                const displayVal = hasNotes ? row.notes : row.status || 'Belum Absen';
-                                return (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100/60 px-2.5 py-0.5 rounded-md">
-                                    ℹ️ {displayVal}
-                                  </span>
-                                );
-                              }
-
-                              if (!hasNotes) {
-                                if (isCheckInScan) {
-                                  return (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 rounded-md">
-                                      ✓ Scan Mandiri
-                                    </span>
-                                  );
-                                }
-                                return <span className="text-gray-400 font-medium">-</span>;
-                              }
-
-                              const notesStr = row.notes;
-                              const isManualByAdmin = notesStr.toLowerCase().includes('sekretaris') || notesStr.toLowerCase().includes('oleh');
-                              
-                              if (isManualByAdmin) {
-                                return (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100/60 px-2 py-0.5 rounded-md" title={notesStr}>
-                                    ✏️ {notesStr}
-                                  </span>
-                                );
-                              }
+                              const gpsInfo = parseGpsCoords(row.notes);
+                              const photoUrl = parsePhotoUrl(row.notes);
+                              const cleanNotes = (row.notes || '')
+                                .replace(/📍\s*GPS:\s*[-\d.]+,\s*[-\d.]+/, '')
+                                .replace(/\[PHOTO:data:image\/[^\]]+\]/, '')
+                                .replace(/\|\s*\|/g, '|')
+                                .trim();
                               
                               return (
-                                <span className="text-xs text-gray-700 font-medium whitespace-pre-wrap leading-tight block max-w-[200px]" title={notesStr}>
-                                  {notesStr}
-                                </span>
+                                <div className="space-y-1">
+                                  {row.status !== 'Hadir' ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100/60 px-2.5 py-0.5 rounded-md">
+                                      ℹ️ {row.notes || row.status || 'Belum Absen'}
+                                    </span>
+                                  ) : (
+                                    <>
+                                      {cleanNotes && cleanNotes !== '-' && (
+                                        <span className="text-xs text-gray-700 font-medium block max-w-[220px] truncate" title={cleanNotes}>
+                                          {cleanNotes}
+                                        </span>
+                                      )}
+                                      {!cleanNotes && isCheckInScan && !gpsInfo && !photoUrl && (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 rounded-md">
+                                          ✓ Scan Mandiri
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+
+                                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                    {gpsInfo && (
+                                      <a
+                                        href={`https://www.google.com/maps?q=${gpsInfo.lat},${gpsInfo.lng}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                                        title="Buka lokasi di Google Maps"
+                                      >
+                                        <MapPin className="w-3 h-3 text-emerald-600" />
+                                        <span>📍 Lokasi GPS</span>
+                                      </a>
+                                    )}
+
+                                    {photoUrl && (
+                                      <button
+                                        onClick={() => setSelectedPreviewSelfie(photoUrl)}
+                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                                        title="Klik untuk melihat foto selfie"
+                                      >
+                                        <Camera className="w-3 h-3 text-blue-600" />
+                                        <span>📸 Foto Selfie</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               );
                             })()}
                           </td>
@@ -2333,7 +2420,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 dailyQrModalType === 'checkin' ? 'bg-emerald-50/50 border-emerald-200' : 'bg-blue-50/50 border-blue-200'
               }`}>
                 <QRCodeSVG
-                  value={dailyQrModalType === 'checkin' ? 'DAILY_CHECKIN' : 'DAILY_CHECKOUT'}
+                  value={dailyQrModalType === 'checkin' ? `DAILY_CHECKIN_${todayWibDateStr}` : `DAILY_CHECKOUT_${todayWibDateStr}`}
                   size={210}
                   level="H"
                   includeMargin={true}
@@ -2345,11 +2432,11 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 <div className="text-left min-w-0 pr-2">
                   <span className="text-[10px] text-gray-400 uppercase font-bold block">Kode Token Manual:</span>
                   <code className="text-xs font-mono font-bold text-gray-800 truncate block">
-                    {dailyQrModalType === 'checkin' ? 'CHECKIN' : 'CHECKOUT'}
+                    {dailyQrModalType === 'checkin' ? `CHECKIN-${todayWibDateStr}` : `CHECKOUT-${todayWibDateStr}`}
                   </code>
                 </div>
                 <button
-                  onClick={() => copyToClipboard(dailyQrModalType === 'checkin' ? 'CHECKIN' : 'CHECKOUT')}
+                  onClick={() => copyToClipboard(dailyQrModalType === 'checkin' ? `CHECKIN-${todayWibDateStr}` : `CHECKOUT-${todayWibDateStr}`)}
                   className="bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shrink-0 flex items-center gap-1 shadow-2xs"
                 >
                   {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -2490,6 +2577,33 @@ export default function AttendanceView({ getToken, participants }: Props) {
           </div>
         </div>
       )}
+      {/* MODAL PREVIEW FOTO SELFIE PRESENSI */}
+      {selectedPreviewSelfie && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl overflow-hidden max-w-md w-full p-4 shadow-2xl relative animate-in zoom-in-95 duration-200 text-center space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+              <h4 className="font-bold text-gray-900 text-sm flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-blue-600" /> Foto Selfie Presensi
+              </h4>
+              <button
+                onClick={() => setSelectedPreviewSelfie(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="rounded-2xl overflow-hidden bg-black max-h-[400px] flex items-center justify-center border border-gray-100">
+              <img src={selectedPreviewSelfie} alt="Selfie Presensi" className="w-full h-auto object-contain max-h-[380px]" />
+            </div>
+            <button
+              onClick={() => setSelectedPreviewSelfie(null)}
+              className="w-full py-2.5 bg-gray-900 hover:bg-black text-white font-bold text-xs rounded-xl transition-all shadow-md"
+            >
+              Tutup Preview Foto
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
