@@ -198,7 +198,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
     setEditDailyStatus(row.status || 'Belum Absen');
     setEditDailyCheckIn(row.checkInTime || '-');
     setEditDailyCheckOut(row.checkOutTime || '-');
-    setEditDailyNotes(row.notes || '');
+    setEditDailyNotes(getCleanNotes(row.notes));
     setEditDailyError(null);
   };
 
@@ -208,6 +208,13 @@ export default function AttendanceView({ getToken, participants }: Props) {
     setEditDailyError(null);
     try {
       const token = await getToken();
+      const oldGps = parseGpsCoords(editingDailyRow.notes);
+      const oldPhoto = parsePhotoUrl(editingDailyRow.notes);
+      const gpsPart = oldGps ? `📍 GPS: ${oldGps.lat}, ${oldGps.lng}` : '';
+      const photoPart = oldPhoto ? `[PHOTO:${oldPhoto}]` : '';
+      const cleanText = editDailyNotes.trim();
+      const combinedNotes = [cleanText, gpsPart, photoPart].filter(Boolean).join(' | ');
+
       const res = await fetch('/api/attendance/daily-report', {
         method: 'PUT',
         headers: {
@@ -220,7 +227,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
           status: editDailyStatus,
           checkInTime: editDailyCheckIn,
           checkOutTime: editDailyCheckOut,
-          notes: editDailyNotes
+          notes: combinedNotes
         })
       });
       let data: any = {};
@@ -738,7 +745,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
         'Status': row.status || 'Belum Absen',
         'Cek In (Jam)': isHadir ? (row.checkInTime || '-') : '-',
         'Cek Out (Jam)': isHadir ? (row.checkOutTime || '-') : '-',
-        'Catatan': !isHadir ? (row.notes || row.status || '-') : (row.notes || '-')
+        'Catatan': !isHadir ? (getCleanNotes(row.notes) || row.status || '-') : (getCleanNotes(row.notes) || '-')
       };
     });
 
@@ -835,7 +842,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
       } else {
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(217, 119, 6); // amber-600
-        const notesDisp = row.notes || row.status || 'Belum Absen';
+        const notesDisp = getCleanNotes(row.notes) || row.status || 'Belum Absen';
         doc.text(notesDisp.length > 25 ? notesDisp.substring(0, 23) + '..' : notesDisp, 148, y + 4);
         
         doc.setFont('helvetica', 'normal');
@@ -864,7 +871,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
         'NIM': p?.nim || '-',
         'Jabatan / Divisi': p?.role || 'Tamu / Pembicara',
         'Status Kehadiran': record.status || 'Belum Absen',
-        'Keterangan Catatan': record.notes || '-'
+        'Keterangan Catatan': getCleanNotes(record.notes) || '-'
       };
     });
 
@@ -1708,27 +1715,23 @@ export default function AttendanceView({ getToken, participants }: Props) {
                           </td>
                           <td className="p-3.5 align-middle">
                             {(() => {
-                              const hasNotes = !!row.notes && row.notes !== '-';
                               const isCheckInScan = row.checkInTime !== '-';
                               const gpsInfo = parseGpsCoords(row.notes);
                               const photoUrl = parsePhotoUrl(row.notes);
-                              const cleanNotes = (row.notes || '')
-                                .replace(/📍\s*GPS:\s*[-\d.]+,\s*[-\d.]+/, '')
-                                .replace(/\[PHOTO:data:image\/[^\]]+\]/, '')
-                                .replace(/\|\s*\|/g, '|')
-                                .trim();
+                              const cleanNotes = getCleanNotes(row.notes);
                               
                               return (
                                 <div className="space-y-1">
                                   {row.status !== 'Hadir' ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100/60 px-2.5 py-0.5 rounded-md">
-                                      ℹ️ {row.notes || row.status || 'Belum Absen'}
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100/60 px-2.5 py-0.5 rounded-md max-w-[200px] sm:max-w-[260px] truncate" title={cleanNotes || row.status || 'Belum Absen'}>
+                                      ℹ️ {cleanNotes || row.status || 'Belum Absen'}
                                     </span>
                                   ) : (
                                     <>
                                       {cleanNotes && cleanNotes !== '-' && (
-                                        <span className="text-xs text-gray-700 font-medium block max-w-[220px] truncate" title={cleanNotes}>
-                                          {cleanNotes}
+                                        <span className="inline-flex items-center gap-1 text-xs text-gray-700 font-medium bg-gray-50 border border-gray-200/80 px-2 py-0.5 rounded-md max-w-[180px] sm:max-w-[240px] truncate cursor-help shadow-2xs" title={cleanNotes}>
+                                          <span className="text-amber-600 font-bold text-[10px]">ℹ️</span>
+                                          <span className="truncate">{cleanNotes}</span>
                                         </span>
                                       )}
                                       {!cleanNotes && isCheckInScan && !gpsInfo && !photoUrl && (

@@ -1017,7 +1017,7 @@ app.use(express.json());
           ? `📍 GPS: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
           : '';
         const photoStr = photo ? `[PHOTO:${photo}]` : '';
-        const noteTag = `Check-In ${displayTime}${gpsStr ? ' | ' + gpsStr : ''}${photoStr ? ' ' + photoStr : ''}`;
+        const noteTag = [gpsStr, photoStr].filter(Boolean).join(' ');
 
         if (existingRec.length > 0) {
           const rec = existingRec[0];
@@ -1027,7 +1027,7 @@ app.use(express.json());
           await safeUpdateRecord(rec.id, {
             status: 'Hadir',
             checkInTime: displayTime,
-            notes: rec.notes ? `${rec.notes} | ${noteTag}` : noteTag
+            notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(' | ') : noteTag
           });
         } else {
           await safeInsertRecord({
@@ -1074,7 +1074,7 @@ app.use(express.json());
           ? `📍 GPS: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
           : '';
         const photoStr = photo ? `[PHOTO:${photo}]` : '';
-        const noteTag = `Check-Out ${displayTime}${gpsStr ? ' | ' + gpsStr : ''}${photoStr ? ' ' + photoStr : ''}`;
+        const noteTag = [gpsStr, photoStr].filter(Boolean).join(' ');
 
         if (existingRec.length > 0) {
           const rec = existingRec[0];
@@ -1083,7 +1083,7 @@ app.use(express.json());
           }
           await safeUpdateRecord(rec.id, {
             checkOutTime: displayTime,
-            notes: rec.notes ? `${rec.notes} | ${noteTag}` : noteTag
+            notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(' | ') : noteTag
           });
         } else {
           await safeInsertRecord({

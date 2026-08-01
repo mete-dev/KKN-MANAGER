@@ -65273,7 +65273,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
       const displayTime2 = `${timeStr2.slice(0, 5)} WIB`;
       const gpsStr = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
       const photoStr = photo ? `[PHOTO:${photo}]` : "";
-      const noteTag = `Check-In ${displayTime2}${gpsStr ? " | " + gpsStr : ""}${photoStr ? " " + photoStr : ""}`;
+      const noteTag = [gpsStr, photoStr].filter(Boolean).join(" ");
       if (existingRec.length > 0) {
         const rec = existingRec[0];
         if (rec.checkInTime && rec.checkInTime !== "-") {
@@ -65282,7 +65282,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         await safeUpdateRecord(rec.id, {
           status: "Hadir",
           checkInTime: displayTime2,
-          notes: rec.notes ? `${rec.notes} | ${noteTag}` : noteTag
+          notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(" | ") : noteTag
         });
       } else {
         await safeInsertRecord({
@@ -65325,7 +65325,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
       const displayTime2 = `${timeStr2.slice(0, 5)} WIB`;
       const gpsStr = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
       const photoStr = photo ? `[PHOTO:${photo}]` : "";
-      const noteTag = `Check-Out ${displayTime2}${gpsStr ? " | " + gpsStr : ""}${photoStr ? " " + photoStr : ""}`;
+      const noteTag = [gpsStr, photoStr].filter(Boolean).join(" ");
       if (existingRec.length > 0) {
         const rec = existingRec[0];
         if (rec.checkOutTime && rec.checkOutTime !== "-") {
@@ -65333,7 +65333,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         }
         await safeUpdateRecord(rec.id, {
           checkOutTime: displayTime2,
-          notes: rec.notes ? `${rec.notes} | ${noteTag}` : noteTag
+          notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(" | ") : noteTag
         });
       } else {
         await safeInsertRecord({
