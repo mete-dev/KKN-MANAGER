@@ -1452,42 +1452,42 @@ export default function AttendanceView({ getToken, participants }: Props) {
       {/* SUB TAB 2: ABSENSI HARIAN (CHECK-IN & CHECK-OUT) */}
       {view === 'list' && activeSubTab === 'harian' && (
         <div className="space-y-6">
-          {/* TWO MAIN QR CARDS: CHECK-IN & CHECK-OUT */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* TWO MAIN QR CARDS: CHECK-IN & CHECK-OUT (SIDE-BY-SIDE ON MOBILE TO SAVE SPACE) */}
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
             {/* CARD 1: QR ABSENSI CHECK IN */}
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                    <LogIn className="w-4 h-4" />
+            <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-2 sm:gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+                  <div className="w-7 h-7 sm:w-9 sm:h-9 bg-emerald-600 text-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                    <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate">Absensi Check-In</h3>
-                    <p className="text-[10px] sm:text-xs text-emerald-800 font-medium">Batas: 10:00 WIB</p>
+                    <h3 className="font-bold text-gray-900 text-xs sm:text-base truncate">Check-In</h3>
+                    <p className="text-[9px] sm:text-xs text-emerald-800 font-medium truncate">Maks: 10:00 WIB</p>
                   </div>
                 </div>
 
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full border shrink-0 ${
                   wibInfo.isCheckInOpen 
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-100' 
                     : 'bg-rose-50 text-rose-800 border-rose-100'
                 }`}>
-                  {wibInfo.isCheckInOpen ? 'Check-In Buka' : 'Check-In Tutup'}
+                  {wibInfo.isCheckInOpen ? 'Buka' : 'Tutup'}
                 </span>
               </div>
 
-              <p className="text-xs text-gray-500 leading-normal bg-gray-50/50 p-2.5 rounded-xl border border-gray-100/60">
-                Pencatatan jam kedatangan harian anggota (maksimal pukul <strong>10:00 WIB</strong>).
+              <p className="text-[10px] sm:text-xs text-gray-500 leading-tight bg-gray-50/50 p-2 sm:p-2.5 rounded-xl border border-gray-100/60 hidden sm:block">
+                Pencatatan kedatangan harian (maksimal pukul <strong>10:00 WIB</strong>).
               </p>
 
               <div>
                 {isSekretarisOrLeader ? (
                   <button
                     onClick={() => setDailyQrModalType('checkin')}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
                   >
-                    <QrCode className="w-4 h-4" />
-                    <span>Tampilkan QR Check-In</span>
+                    <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span>QR Check-In</span>
                   </button>
                 ) : (
                   <button
@@ -1497,49 +1497,49 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       setScanError(null);
                       setManualCode(`CHECKIN-${todayWibDateStr}`);
                     }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
                   >
-                    <ScanLine className="w-4 h-4" />
-                    <span>Scan QR Check-In Saya</span>
+                    <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span>Scan Check-In</span>
                   </button>
                 )}
               </div>
             </div>
 
             {/* CARD 2: QR ABSENSI CHECK OUT */}
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                    <LogOut className="w-4 h-4" />
+            <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-2 sm:gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+                  <div className="w-7 h-7 sm:w-9 sm:h-9 bg-blue-600 text-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate">Absensi Check-Out</h3>
-                    <p className="text-[10px] sm:text-xs text-blue-800 font-medium">Batas: 22:00 WIB</p>
+                    <h3 className="font-bold text-gray-900 text-xs sm:text-base truncate">Check-Out</h3>
+                    <p className="text-[9px] sm:text-xs text-blue-800 font-medium truncate">Maks: 22:00 WIB</p>
                   </div>
                 </div>
 
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full border shrink-0 ${
                   wibInfo.isCheckOutOpen 
                     ? 'bg-blue-50 text-blue-800 border-blue-100' 
                     : 'bg-rose-50 text-rose-800 border-rose-100'
                 }`}>
-                  {wibInfo.isCheckOutOpen ? 'Check-Out Buka' : 'Check-Out Tutup'}
+                  {wibInfo.isCheckOutOpen ? 'Buka' : 'Tutup'}
                 </span>
               </div>
 
-              <p className="text-xs text-gray-500 leading-normal bg-gray-50/50 p-2.5 rounded-xl border border-gray-100/60">
-                Pencatatan kepulangan/selesai kegiatan harian (maksimal pukul <strong>22:00 WIB</strong>).
+              <p className="text-[10px] sm:text-xs text-gray-500 leading-tight bg-gray-50/50 p-2 sm:p-2.5 rounded-xl border border-gray-100/60 hidden sm:block">
+                Pencatatan kepulangan harian (maksimal pukul <strong>22:00 WIB</strong>).
               </p>
 
               <div>
                 {isSekretarisOrLeader ? (
                   <button
                     onClick={() => setDailyQrModalType('checkout')}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
                   >
-                    <QrCode className="w-4 h-4" />
-                    <span>Tampilkan QR Check-Out</span>
+                    <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span>QR Check-Out</span>
                   </button>
                 ) : (
                   <button
@@ -1549,10 +1549,10 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       setScanError(null);
                       setManualCode(`CHECKOUT-${todayWibDateStr}`);
                     }}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
                   >
-                    <ScanLine className="w-4 h-4" />
-                    <span>Scan QR Check-Out Saya</span>
+                    <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span>Scan Check-Out</span>
                   </button>
                 )}
               </div>
