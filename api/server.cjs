@@ -53934,13 +53934,19 @@ var attendanceRecords = pgTable("attendance_records", {
 });
 
 // src/db/index.ts
+var isPostgresConfigured = () => {
+  if (process.env.DATABASE_URL || process.env.SUPABASE_DB_URL) return true;
+  if (process.env.VERCEL) return false;
+  const host = process.env.SQL_HOST || process.env.SUPABASE_HOST;
+  return Boolean(host && host !== "localhost");
+};
 var createPool = () => {
   const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
   if (connectionString) {
     return new Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
-      connectionTimeoutMillis: 15e3
+      connectionTimeoutMillis: 5e3
     });
   }
   const host = process.env.SQL_HOST || process.env.SUPABASE_HOST || "localhost";
@@ -53955,7 +53961,7 @@ var createPool = () => {
     password,
     database,
     ssl: host.includes("supabase") ? { rejectUnauthorized: false } : false,
-    connectionTimeoutMillis: 5e3
+    connectionTimeoutMillis: 3e3
   });
 };
 var pool = createPool();
@@ -63634,7 +63640,7 @@ function getSupabase() {
 var isSupabaseConfigured = () => {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  return Boolean(url && key);
+  return Boolean(url && url.startsWith("http") && key && key.length > 10);
 };
 
 // src/lib/dataRepository.ts
@@ -63681,7 +63687,7 @@ var memoryStore = {
   attendanceSessions: [],
   attendanceRecords: []
 };
-var QUERY_TIMEOUT_MS = 3e3;
+var QUERY_TIMEOUT_MS = 1500;
 function withTimeout(promise, ms = QUERY_TIMEOUT_MS) {
   return Promise.race([
     promise,
@@ -63699,6 +63705,9 @@ async function repositoryGetUsers() {
     } catch (e) {
       console.warn("Supabase getUsers error:", e);
     }
+  }
+  if (!isPostgresConfigured()) {
+    return memoryStore.users;
   }
   try {
     const res = await withTimeout(db.select().from(users));
@@ -64436,6 +64445,15 @@ async function repositoryBatchRestore(data) {
 // server.ts
 var JWT_SECRET2 = process.env.JWT_SECRET || "kkn-secret-key-123";
 var app = (0, import_express.default)();
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
 app.use(import_express.default.json());
 async function logActivity(userId, action, details) {
   try {

@@ -1,4 +1,4 @@
-import { db } from '../db/index';
+import { db, isPostgresConfigured } from '../db/index';
 import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { isSupabaseConfigured, getSupabase } from './supabase';
@@ -53,7 +53,7 @@ export const memoryStore = {
   attendanceRecords: [] as any[]
 };
 
-const QUERY_TIMEOUT_MS = 3000;
+const QUERY_TIMEOUT_MS = 1500;
 
 function withTimeout<T>(promise: Promise<T>, ms: number = QUERY_TIMEOUT_MS): Promise<T> {
   return Promise.race([
@@ -74,6 +74,10 @@ export async function repositoryGetUsers(): Promise<any[]> {
     } catch (e) {
       console.warn('Supabase getUsers error:', e);
     }
+  }
+
+  if (!isPostgresConfigured()) {
+    return memoryStore.users;
   }
 
   try {

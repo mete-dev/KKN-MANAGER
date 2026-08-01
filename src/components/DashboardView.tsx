@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Participant, Transaction, Task, KKNEvent } from '../types';
 import { Users, Wallet, CheckSquare, Calendar as CalendarIcon, QrCode, ScanLine, CalendarDays, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -8,11 +9,103 @@ interface Props {
   transactions: Transaction[];
   tasks: Task[];
   events: KKNEvent[];
+  getToken: () => Promise<string | null>;
 }
 
-export function DashboardView({ participants, transactions, tasks, events }: Props) {
+export function DashboardView({ participants, transactions, tasks, events, getToken }: Props) {
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  const [myStatus, setMyStatus] = useState<{
+    daily: { status: string; checkInTime: string; checkOutTime: string };
+    activities: Array<{
+      sessionId: string;
+      sessionTitle: string;
+      sessionDate: string;
+      status: string;
+      checkInTime: string;
+      checkOutTime: string;
+    }>;
+  } | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMyStatus = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const headers = { Authorization: `Bearer ${token}` };
+
+        // 1. Fetch daily check-in / check-out times from existing daily-report endpoint
+        const todayDate = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
+        const dailyRes = await fetch(`/api/attendance/daily-report?date=${todayDate}`, { headers });
+        let dailyInfo = { status: 'Belum Absen', checkInTime: '-', checkOutTime: '-' };
+        
+        if (dailyRes.ok) {
+          const dailyData = await dailyRes.json();
+          const myRecord = dailyData.report?.find((r: any) => r.id === user?.id);
+          if (myRecord) {
+            dailyInfo = {
+              status: myRecord.status || 'Belum Absen',
+              checkInTime: myRecord.checkInTime || '-',
+              checkOutTime: myRecord.checkOutTime || '-'
+            };
+          }
+        }
+
+        // 2. Fetch all sessions to find today's activity check-ins
+        const sessionsRes = await fetch('/api/attendance', { headers });
+        const activityList: Array<{
+          sessionId: string;
+          sessionTitle: string;
+          sessionDate: string;
+          status: string;
+          checkInTime: string;
+          checkOutTime: string;
+        }> = [];
+
+        if (sessionsRes.ok) {
+          const allSessions = await sessionsRes.json();
+          // Filter to today's event sessions
+          const todaySessions = allSessions.filter((s: any) => s.date === todayDate && s.sessionType !== 'daily');
+          
+          // Fetch details for each of today's event sessions
+          for (const sess of todaySessions) {
+            try {
+              const detailRes = await fetch(`/api/attendance/${sess.id}`, { headers });
+              if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                const myRecord = detailData.records?.find((r: any) => r.userId === user?.id);
+                if (myRecord) {
+                  activityList.push({
+                    sessionId: sess.id,
+                    sessionTitle: sess.title,
+                    sessionDate: sess.date,
+                    status: myRecord.status,
+                    checkInTime: myRecord.checkInTime || '-',
+                    checkOutTime: myRecord.checkOutTime || '-'
+                  });
+                }
+              }
+            } catch (err) {
+              console.error("Failed to fetch session detail", err);
+            }
+          }
+        }
+
+        setMyStatus({
+          daily: dailyInfo,
+          activities: activityList
+        });
+      } catch (e) {
+        console.error("Failed to fetch my status", e);
+      } finally {
+        setStatusLoading(false);
+      }
+    };
+
+    fetchMyStatus();
+  }, [getToken, user?.id]);
 
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -31,6 +124,9 @@ export function DashboardView({ participants, transactions, tasks, events }: Pro
   const nonEventTasksDone = nonEventTasks.filter(t => t.status === 'done').length;
   const eventProgress = eventTasks.length > 0 ? Math.round((eventTasksDone / eventTasks.length) * 100) : 0;
   const nonEventProgress = nonEventTasks.length > 0 ? Math.round((nonEventTasksDone / nonEventTasks.length) * 100) : 0;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayActivities = myStatus?.activities.filter(a => a.sessionDate === todayStr) || [];
 
   return (
     <>
@@ -67,10 +163,55 @@ export function DashboardView({ participants, transactions, tasks, events }: Pro
               <QrCode className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Presensi Kehadiran</h3>
-              <p className="text-[11px] text-gray-500">Scan QR Code untuk absensi harian & kegiatan</p>
+              <h3 className="text-sm font-bold text-gray-900">Status Kehadiran Hari Ini</h3>
+              <p className="text-[11px] text-gray-500">Informasi jam check-in & check-out Anda</p>
             </div>
           </div>
+
+          {/* Jam Check-In & Check-Out Aktual */}
+          <div className="bg-gray-50 rounded-xl p-3.5 text-xs text-gray-600 space-y-2.5 border border-gray-100">
+            <div className="flex justify-between items-center">
+              <span className="font-semibold text-gray-700">Jam Check-In Posko:</span>
+              {statusLoading ? (
+                <span className="text-[10px] text-gray-400">Memuat...</span>
+              ) : myStatus?.daily.checkInTime && myStatus.daily.checkInTime !== '-' ? (
+                <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2 py-0.5 rounded border border-emerald-100 text-[10px]">
+                  {myStatus.daily.checkInTime} WIB
+                </span>
+              ) : (
+                <span className="bg-gray-100 text-gray-400 font-medium px-2 py-0.5 rounded text-[10px]">Belum Cek In</span>
+              )}
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="font-semibold text-gray-700">Jam Check-Out Posko:</span>
+              {statusLoading ? (
+                <span className="text-[10px] text-gray-400">Memuat...</span>
+              ) : myStatus?.daily.checkOutTime && myStatus.daily.checkOutTime !== '-' ? (
+                <span className="bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded border border-blue-100 text-[10px]">
+                  {myStatus.daily.checkOutTime} WIB
+                </span>
+              ) : (
+                <span className="bg-gray-100 text-gray-400 font-medium px-2 py-0.5 rounded text-[10px]">Belum Cek Out</span>
+              )}
+            </div>
+          </div>
+
+          {/* Status Absen Kegiatan Hari Ini */}
+          {!statusLoading && todayActivities.length > 0 && (
+            <div className="bg-emerald-50/20 rounded-xl p-3.5 text-xs text-gray-600 space-y-2 border border-emerald-100/30">
+              <h4 className="font-bold text-[10px] text-emerald-800 uppercase tracking-wide">Jam Presensi Kegiatan Hari Ini</h4>
+              <div className="space-y-2">
+                {todayActivities.map((act, index) => (
+                  <div key={index} className="flex justify-between items-center py-1 border-b border-gray-100 last:border-0 last:pb-0">
+                    <span className="font-medium text-gray-700 truncate max-w-[180px]">{act.sessionTitle}</span>
+                    <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2 py-0.5 rounded border border-emerald-100 text-[10px]">
+                      {act.checkInTime !== '-' ? `${act.checkInTime} WIB` : 'Belum Absen'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
           <button
             onClick={() => navigate('/absensi?scan=true')}
@@ -112,6 +253,9 @@ export function DashboardView({ participants, transactions, tasks, events }: Pro
                   }
                 };
 
+                // Find if the user has checked in for this event/session
+                const matchingSession = myStatus?.activities.find(a => a.sessionTitle.toLowerCase() === event.title.toLowerCase());
+
                 return (
                   <div 
                     key={event.id} 
@@ -129,7 +273,14 @@ export function DashboardView({ participants, transactions, tasks, events }: Pro
                           {event.category ? event.category.replace('_', ' ') : 'lainnya'}
                         </span>
                       </div>
-                      <p className="text-[10px] text-gray-500 mt-0.5 font-medium font-mono">{event.time || '08:00'} WIB</p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mt-1.5">
+                        <p className="text-[10px] text-gray-500 font-medium font-mono">{event.time || '08:00'} WIB</p>
+                        {matchingSession && matchingSession.checkInTime !== '-' && (
+                          <span className="text-[8px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 px-1.5 py-0.5 rounded-md">
+                            Anda Cek In: {matchingSession.checkInTime} WIB
+                          </span>
+                        )}
+                      </div>
                       {event.description && (
                         <p className="text-[10px] text-gray-400 mt-1 line-clamp-1 italic">
                           "{event.description}"

@@ -3,6 +3,13 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
 
+export const isPostgresConfigured = (): boolean => {
+  if (process.env.DATABASE_URL || process.env.SUPABASE_DB_URL) return true;
+  if (process.env.VERCEL) return false;
+  const host = process.env.SQL_HOST || process.env.SUPABASE_HOST;
+  return Boolean(host && host !== 'localhost');
+};
+
 export const createPool = () => {
   const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 
@@ -10,7 +17,7 @@ export const createPool = () => {
     return new Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
-      connectionTimeoutMillis: 15000,
+      connectionTimeoutMillis: 5000,
     });
   }
 
@@ -27,7 +34,7 @@ export const createPool = () => {
     password,
     database,
     ssl: host.includes('supabase') ? { rejectUnauthorized: false } : false,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 3000,
   });
 };
 
@@ -38,4 +45,5 @@ pool.on('error', (err) => {
 });
 
 export const db = drizzle(pool, { schema });
+
 

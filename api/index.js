@@ -1,3 +1,7 @@
 // Vercel serverless function entry point
-const mod = require('./server.cjs');
-module.exports = mod.default || mod;
+const app = require('./server.cjs');
+
+module.exports = (req, res) => {
+  const handler = app.default || app;
+  return handler(req, res);
+};

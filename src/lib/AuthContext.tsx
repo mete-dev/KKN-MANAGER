@@ -56,7 +56,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (contentType && contentType.includes('application/json')) {
       data = await res.json();
     } else {
-      throw new Error('Gagal menghubungi server (respon tidak valid).');
+      const text = await res.text();
+      console.error('Server non-JSON response:', res.status, text);
+      throw new Error(
+        res.status === 404
+          ? 'API tidak ditemukan (404). Pastikan server/API berjalan di Vercel.'
+          : res.status === 504
+          ? 'Koneksi ke server timeout (504).'
+          : `Gagal menghubungi server (HTTP ${res.status}: ${res.statusText || 'Respon tidak valid'}).`
+      );
     }
     if (!res.ok) throw new Error(data.error || 'Login failed');
     localStorage.setItem('kkn_token', data.token);
@@ -74,7 +82,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (contentType && contentType.includes('application/json')) {
       data = await res.json();
     } else {
-      throw new Error('Gagal menghubungi server (respon tidak valid).');
+      const text = await res.text();
+      console.error('Server non-JSON response:', res.status, text);
+      throw new Error(
+        res.status === 404
+          ? 'API tidak ditemukan (404). Pastikan server/API berjalan di Vercel.'
+          : res.status === 504
+          ? 'Koneksi ke server timeout (504).'
+          : `Gagal menghubungi server (HTTP ${res.status}: ${res.statusText || 'Respon tidak valid'}).`
+      );
     }
     if (!res.ok) throw new Error(data.error || 'Registration failed');
     localStorage.setItem('kkn_token', data.token);

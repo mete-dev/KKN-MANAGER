@@ -25,5 +25,5 @@ export function getSupabase(): SupabaseClient {
 export const isSupabaseConfigured = (): boolean => {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const key = process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  return Boolean(url && key);
+  return Boolean(url && url.startsWith('http') && key && key.length > 10);
 };
