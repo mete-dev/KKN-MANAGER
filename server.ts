@@ -35,7 +35,7 @@ import {
   repositoryInsertAttendanceRecord,
   repositoryUpdateAttendanceRecord,
   repositoryBatchRestore
-} from "./src/lib/dataRepository.ts";
+} from "./src/lib/dataRepository";
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kkn-secret-key-123';
 
@@ -616,6 +616,55 @@ app.use(express.json());
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Gagal memuat data absensi." });
+    }
+  });
+
+  app.get("/api/attendance/my-status", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const currentUserId = req.user?.id;
+      if (!currentUserId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const { dateStr } = getWibDateTime();
+      const dailySession = await safeSelectDailySession(dateStr);
+      let dailyRecord = null;
+      if (dailySession.length > 0) {
+        const records = await safeSelectRecordsBySessionId(dailySession[0].id);
+        dailyRecord = records.find(r => r.userId === currentUserId) || null;
+      }
+
+      const sessions = await safeSelectSessions();
+      const records = await safeSelectRecords();
+      const userActivityRecords = records.filter(r => r.userId === currentUserId && (!dailySession[0] || r.sessionId !== dailySession[0].id));
+      
+      const activities = userActivityRecords.map(r => {
+        const sess = sessions.find(s => s.id === r.sessionId);
+        return {
+          sessionId: r.sessionId,
+          sessionTitle: sess?.title || "Kegiatan KKN",
+          sessionDate: sess?.date,
+          status: r.status,
+          checkInTime: r.checkInTime || parseTimeFromNotes(r.notes, 'Check-In') || '-',
+          checkOutTime: r.checkOutTime || parseTimeFromNotes(r.notes, 'Check-Out') || '-'
+        };
+      });
+
+      res.json({
+        daily: dailyRecord ? {
+          status: dailyRecord.status || 'Belum Absen',
+          checkInTime: dailyRecord.checkInTime || parseTimeFromNotes(dailyRecord.notes, 'Check-In') || '-',
+          checkOutTime: dailyRecord.checkOutTime || parseTimeFromNotes(dailyRecord.notes, 'Check-Out') || '-'
+        } : {
+          status: 'Belum Absen',
+          checkInTime: '-',
+          checkOutTime: '-'
+        },
+        activities
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal memuat status kehadiran." });
     }
   });
 

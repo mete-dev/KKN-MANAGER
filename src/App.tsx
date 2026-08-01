@@ -283,7 +283,7 @@ function AppContent() {
             ) : (
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardView participants={participants} transactions={transactions} tasks={tasks} events={events} />} />
+                <Route path="/dashboard" element={<DashboardView participants={participants} transactions={transactions} tasks={tasks} events={events} getToken={getToken} />} />
                 {userPerms.participants !== 'none' && <Route path="/peserta" element={<ParticipantsView participants={participants} setParticipants={setParticipants} getToken={getToken} />} />}
                 {userPerms.finance !== 'none' && <Route path="/keuangan" element={<FinanceView transactions={transactions} setTransactions={setTransactions} getToken={getToken} />} />}
                 {userPerms.tasks !== 'none' && <Route path="/tugas" element={<TasksView tasks={tasks} setTasks={setTasks} participants={participants} events={events} getToken={getToken} />} />}

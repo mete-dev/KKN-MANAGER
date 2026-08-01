@@ -270,7 +270,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
   // --- CAMERA SCANNER HOOK ---
   useEffect(() => {
     let html5QrcodeScanner: Html5Qrcode | null = null;
-    if (isScannerOpen && scanTab === 'camera' && !scanSuccessResult) {
+    if (isScannerOpen && !scanSuccessResult) {
       setCameraPermissionError(false);
       const timer = setTimeout(() => {
         const readerElem = document.getElementById('reader');
@@ -305,7 +305,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
         }
       };
     }
-  }, [isScannerOpen, scanTab, scanSuccessResult]);
+  }, [isScannerOpen, scanSuccessResult]);
 
   // Handle Scan Code (From Camera or Manual Input)
   const handleProcessScanCode = async (rawCode: string) => {
@@ -2141,25 +2141,6 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 </div>
               ) : (
                 <>
-                  <div className="flex bg-gray-100 p-1 rounded-xl">
-                    <button
-                      onClick={() => setScanTab('camera')}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                        scanTab === 'camera' ? 'bg-white text-emerald-700 shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                      }`}
-                    >
-                      <Camera className="w-4 h-4" /> Kamera Scanner
-                    </button>
-                    <button
-                      onClick={() => setScanTab('manual')}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                        scanTab === 'manual' ? 'bg-white text-emerald-700 shadow-xs' : 'text-gray-500 hover:text-gray-800'
-                      }`}
-                    >
-                      <QrCode className="w-4 h-4" /> Input Kode Manual
-                    </button>
-                  </div>
-
                   {scanError && (
                     <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2.5 leading-relaxed font-medium">
                       <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
@@ -2167,64 +2148,25 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     </div>
                   )}
 
-                  {scanTab === 'camera' && (
-                    <div className="space-y-3">
-                      <div className="relative bg-black rounded-2xl overflow-hidden min-h-[260px] flex items-center justify-center border border-gray-200">
-                        <div id="reader" className="w-full h-full min-h-[260px]"></div>
+                  <div className="space-y-3">
+                    <div className="relative bg-black rounded-2xl overflow-hidden min-h-[260px] flex items-center justify-center border border-gray-200">
+                      <div id="reader" className="w-full h-full min-h-[260px]"></div>
 
-                        {cameraPermissionError && (
-                          <div className="absolute inset-0 bg-gray-900/90 text-white p-6 flex flex-col items-center justify-center text-center space-y-3 z-10">
-                            <Camera className="w-10 h-10 text-amber-400" />
-                            <h5 className="font-bold text-sm">Kamera Tidak Tersedia</h5>
-                            <p className="text-[11px] text-gray-300 leading-relaxed">
-                              Izin kamera diblokir. Silakan gunakan menu <strong>"Input Kode Manual"</strong>.
-                            </p>
-                            <button
-                              onClick={() => setScanTab('manual')}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-all"
-                            >
-                              Gunakan Input Kode Manual
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <p className="text-[11px] text-center text-gray-500">
-                        Arahkan kamera ke QR Code Kegiatan, Check-In, atau Check-Out.
-                      </p>
+                      {cameraPermissionError && (
+                        <div className="absolute inset-0 bg-gray-900/90 text-white p-6 flex flex-col items-center justify-center text-center space-y-3 z-10">
+                          <Camera className="w-10 h-10 text-amber-400" />
+                          <h5 className="font-bold text-sm">Kamera Tidak Aktif</h5>
+                          <p className="text-[11px] text-gray-300 leading-relaxed">
+                            Izin kamera diblokir atau kamera tidak terdeteksi. Silakan aktifkan izin kamera pada browser Anda untuk memindai QR Code.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
 
-                  {scanTab === 'manual' && (
-                    <form 
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        if (manualCode.trim()) handleProcessScanCode(manualCode);
-                      }} 
-                      className="space-y-4 py-2"
-                    >
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">Masukkan Kode Token Presensi</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Ketik KKN-..., CHECKIN, CHECKOUT..."
-                          value={manualCode}
-                          onChange={e => setManualCode(e.target.value)}
-                          className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-emerald-500/20"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={scanLoading || !manualCode.trim()}
-                        className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
-                      >
-                        {scanLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                        Proses Presensi Saya
-                      </button>
-                    </form>
-                  )}
+                    <p className="text-[11px] text-center text-gray-500">
+                      Arahkan kamera HP Anda ke QR Code Kegiatan KKN, Check-In, atau Check-Out untuk presensi otomatis.
+                    </p>
+                  </div>
                 </>
               )}
             </div>
