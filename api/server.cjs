@@ -65516,6 +65516,19 @@ async function startServer() {
         appType: "spa"
       });
       app.use(vite.middlewares);
+      app.use("*", async (req, res, next) => {
+        if (req.originalUrl.startsWith("/api")) return next();
+        try {
+          const fs = await import("fs");
+          const path2 = await import("path");
+          const indexPath = path2.resolve(process.cwd(), "index.html");
+          let template = fs.readFileSync(indexPath, "utf-8");
+          template = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ "Content-Type": "text/html" }).end(template);
+        } catch (e) {
+          next(e);
+        }
+      });
     } catch (err) {
       console.error("Vite dev server init error:", err);
     }
