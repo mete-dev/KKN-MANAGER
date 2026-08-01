@@ -883,171 +883,313 @@ export default function AttendanceView({ getToken, participants }: Props) {
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden max-w-5xl mx-auto w-full">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50/75 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      <th className="py-3 px-4 w-[110px]">Status</th>
-                      <th className="py-3 px-4 min-w-[180px]">Nama Kegiatan</th>
-                      <th className="py-3 px-4 w-[145px]">Tanggal</th>
-                      <th className="py-3 px-4 w-[340px]">Kehadiran</th>
-                      <th className="py-3 px-4 text-right w-[240px]">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 text-sm">
-                    {filteredSessions.map((session) => {
-                      const isLocked = session.isPermanent === 1;
-                      const canEditThis = !isLocked || isSuperAdmin;
-                      const totalParticipants = session.counts?.total || 0;
-                      const hadirCount = session.counts?.hadir || 0;
-                      const belumAbsenCount = session.counts?.belumAbsen ?? (totalParticipants - hadirCount - (session.counts?.sakit||0) - (session.counts?.izin||0) - (session.counts?.alfa||0));
+            <div className="max-w-5xl mx-auto w-full space-y-4">
+              {/* MOBILE VIEW: List of compact cards (Visible only on mobile/tablet < 768px) */}
+              <div className="block md:hidden space-y-3">
+                {filteredSessions.map((session) => {
+                  const isLocked = session.isPermanent === 1;
+                  const canEditThis = !isLocked || isSuperAdmin;
+                  const totalParticipants = session.counts?.total || 0;
+                  const hadirCount = session.counts?.hadir || 0;
+                  const belumAbsenCount = session.counts?.belumAbsen ?? (totalParticipants - hadirCount - (session.counts?.sakit||0) - (session.counts?.izin||0) - (session.counts?.alfa||0));
 
-                      return (
-                        <tr key={session.id} className="hover:bg-gray-50/30 transition-colors">
-                          {/* 1. Status */}
-                          <td className="py-3 px-4 align-middle">
-                            {isLocked ? (
-                              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-0.5 whitespace-nowrap">
-                                <Lock className="w-2.5 h-2.5" /> Permanen
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md inline-flex items-center gap-0.5 whitespace-nowrap">
-                                <Unlock className="w-2.5 h-2.5" /> Draf
-                              </span>
-                            )}
-                          </td>
+                  return (
+                    <div 
+                      key={session.id}
+                      className="bg-white rounded-2xl border border-gray-100 shadow-xs p-4 space-y-3"
+                    >
+                      {/* Top: Status Badge & Date */}
+                      <div className="flex items-center justify-between gap-2">
+                        {isLocked ? (
+                          <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
+                            <Lock className="w-2.5 h-2.5" /> Permanen
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
+                            <Unlock className="w-2.5 h-2.5" /> Draf
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1 text-[11px] text-gray-500 whitespace-nowrap">
+                          <Calendar className="w-3 h-3 text-emerald-600" />
+                          <span>{new Date(session.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                      </div>
 
-                          {/* 2. Nama Kegiatan */}
-                          <td className="py-3 px-4 align-middle">
-                            <div className="space-y-0.5">
-                              <span className="font-bold text-gray-900 leading-snug break-words block">
-                                {session.title}
-                              </span>
-                              {session.notes && (
-                                <span className="text-xs text-gray-400 block max-w-[280px] truncate italic" title={session.notes}>
-                                  "{session.notes}"
+                      {/* Title & Notes */}
+                      <div>
+                        <h3 className="font-bold text-gray-900 text-sm leading-snug break-words">
+                          {session.title}
+                        </h3>
+                        {session.notes && (
+                          <p className="text-[11px] text-gray-450 italic mt-1 bg-gray-50/50 p-2 rounded-lg border border-gray-100/50">
+                            "{session.notes}"
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Mini Table Kehadiran */}
+                      <table className="w-full text-center text-[10px] border border-gray-150 rounded-lg overflow-hidden bg-white">
+                        <thead>
+                          <tr className="bg-gray-50 text-[9px] text-gray-450 uppercase font-bold border-b border-gray-150">
+                            <th className="py-0.5 px-1 border-r border-gray-150 text-emerald-700">Hadir</th>
+                            <th className="py-0.5 px-1 border-r border-gray-150 text-gray-550">Belum</th>
+                            <th className="py-0.5 px-1 border-r border-gray-150 text-blue-750">Sakit</th>
+                            <th className="py-0.5 px-1 border-r border-gray-150 text-amber-750">Izin</th>
+                            <th className="py-0.5 px-1 text-red-755">Alfa</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="font-bold text-gray-900 text-[11px]">
+                            <td className="py-1 px-1 border-r border-gray-150 bg-emerald-50/10 text-emerald-700">{hadirCount}</td>
+                            <td className="py-1 px-1 border-r border-gray-150 bg-gray-50/10 text-gray-600">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</td>
+                            <td className="py-1 px-1 border-r border-gray-150 bg-blue-50/10 text-blue-700">{session.counts?.sakit || 0}</td>
+                            <td className="py-1 px-1 border-r border-gray-150 bg-amber-50/10 text-amber-700">{session.counts?.izin || 0}</td>
+                            <td className="py-1 px-1 bg-red-50/10 text-red-700">{session.counts?.alfa || 0}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1.5 pt-2.5 border-t border-gray-100 justify-end">
+                        {isSekretarisOrLeader ? (
+                          <>
+                            <button
+                              onClick={() => setQrModalSession(session)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
+                            >
+                              <QrCode className="w-3 h-3" />
+                              <span>Token QR</span>
+                            </button>
+
+                            <button
+                              onClick={() => loadSession(session, 'detail')}
+                              className="text-[11px] font-bold text-gray-700 hover:text-emerald-850 bg-gray-50 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-all border border-gray-150 flex items-center gap-0.5 whitespace-nowrap"
+                            >
+                              <span>Rekap</span>
+                              <ChevronRight className="w-3 h-3 text-gray-450" />
+                            </button>
+
+                            <button
+                              disabled={!canEditThis}
+                              onClick={() => loadSession(session, 'edit')}
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                canEditThis 
+                                  ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-100'
+                                  : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
+                              }`}
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              disabled={!canEditThis}
+                              onClick={() => handleDeleteSession(session.id, isLocked)}
+                              className={`p-1.5 rounded-lg border transition-all ${
+                                canEditThis 
+                                  ? 'text-red-600 bg-red-50 hover:bg-red-100 border-red-100'
+                                  : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
+                              }`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setIsScannerOpen(true);
+                                setScanSuccessResult(null);
+                                setScanError(null);
+                                setManualCode(session.id);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
+                            >
+                              <ScanLine className="w-3 h-3" />
+                              <span>Scan QR</span>
+                            </button>
+
+                            <button
+                              onClick={() => loadSession(session, 'detail')}
+                              className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 border border-gray-200/70 whitespace-nowrap"
+                            >
+                              <FileText className="w-3 h-3 text-emerald-600" />
+                              <span>List Kehadiran</span>
+                              <ChevronRight className="w-3 h-3 text-gray-455" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* DESKTOP VIEW: Table (Visible only on tablets & laptops >= 768px) */}
+              <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50/75 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        <th className="py-3 px-4 w-[110px]">Status</th>
+                        <th className="py-3 px-4 min-w-[180px]">Nama Kegiatan</th>
+                        <th className="py-3 px-4 w-[145px]">Tanggal</th>
+                        <th className="py-3 px-4 w-[340px]">Kehadiran</th>
+                        <th className="py-3 px-4 text-right w-[240px]">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm">
+                      {filteredSessions.map((session) => {
+                        const isLocked = session.isPermanent === 1;
+                        const canEditThis = !isLocked || isSuperAdmin;
+                        const totalParticipants = session.counts?.total || 0;
+                        const hadirCount = session.counts?.hadir || 0;
+                        const belumAbsenCount = session.counts?.belumAbsen ?? (totalParticipants - hadirCount - (session.counts?.sakit||0) - (session.counts?.izin||0) - (session.counts?.alfa||0));
+
+                        return (
+                          <tr key={session.id} className="hover:bg-gray-50/30 transition-colors">
+                            {/* 1. Status */}
+                            <td className="py-3 px-4 align-middle">
+                              {isLocked ? (
+                                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-0.5 whitespace-nowrap">
+                                  <Lock className="w-2.5 h-2.5" /> Permanen
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md inline-flex items-center gap-0.5 whitespace-nowrap">
+                                  <Unlock className="w-2.5 h-2.5" /> Draf
                                 </span>
                               )}
-                            </div>
-                          </td>
+                            </td>
 
-                          {/* 3. Tanggal */}
-                          <td className="py-3 px-4 align-middle text-gray-650 font-medium whitespace-nowrap">
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                              <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <span>{new Date(session.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                            </div>
-                          </td>
+                            {/* 2. Nama Kegiatan */}
+                            <td className="py-3 px-4 align-middle">
+                              <div className="space-y-0.5">
+                                <span className="font-bold text-gray-900 leading-snug break-words block">
+                                  {session.title}
+                                </span>
+                                {session.notes && (
+                                  <span className="text-xs text-gray-400 block max-w-[280px] truncate italic" title={session.notes}>
+                                    "{session.notes}"
+                                  </span>
+                                )}
+                              </div>
+                            </td>
 
-                          {/* 4. Kehadiran */}
-                          <td className="py-3 px-4 align-middle">
-                            <table className="w-full max-w-[280px] text-center text-[10px] border border-gray-150 rounded-lg overflow-hidden bg-white">
-                              <thead>
-                                <tr className="bg-gray-50 text-[9px] text-gray-450 uppercase font-bold border-b border-gray-150">
-                                  <th className="py-0.5 px-1 border-r border-gray-150 text-emerald-700 font-bold">Hadir</th>
-                                  <th className="py-0.5 px-1 border-r border-gray-150 text-gray-500 font-bold">Belum</th>
-                                  <th className="py-0.5 px-1 border-r border-gray-150 text-blue-700 font-bold">Sakit</th>
-                                  <th className="py-0.5 px-1 border-r border-gray-150 text-amber-700 font-bold">Izin</th>
-                                  <th className="py-0.5 px-1 text-red-700 font-bold">Alfa</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr className="font-bold text-gray-900 text-[11px]">
-                                  <td className="py-1 px-1 border-r border-gray-150 bg-emerald-50/10 text-emerald-700">{hadirCount}</td>
-                                  <td className="py-1 px-1 border-r border-gray-150 bg-gray-50/10 text-gray-600">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</td>
-                                  <td className="py-1 px-1 border-r border-gray-150 bg-blue-50/10 text-blue-700">{session.counts?.sakit || 0}</td>
-                                  <td className="py-1 px-1 border-r border-gray-150 bg-amber-50/10 text-amber-700">{session.counts?.izin || 0}</td>
-                                  <td className="py-1 px-1 bg-red-50/10 text-red-700">{session.counts?.alfa || 0}</td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </td>
+                            {/* 3. Tanggal */}
+                            <td className="py-3 px-4 align-middle text-gray-650 font-medium whitespace-nowrap">
+                              <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                                <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>{new Date(session.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                              </div>
+                            </td>
 
-                          {/* 5. Aksi */}
-                          <td className="py-3 px-4 align-middle text-right">
-                            <div className="flex items-center gap-2 justify-end">
-                              {isSekretarisOrLeader ? (
-                                <>
-                                  <button
-                                    onClick={() => setQrModalSession(session)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
-                                    title="Tampilkan Token QR"
-                                  >
-                                    <QrCode className="w-3 h-3" />
-                                    <span>Token QR</span>
-                                  </button>
+                            {/* 4. Kehadiran */}
+                            <td className="py-3 px-4 align-middle">
+                              <table className="w-full max-w-[280px] text-center text-[10px] border border-gray-150 rounded-lg overflow-hidden bg-white">
+                                <thead>
+                                  <tr className="bg-gray-50 text-[9px] text-gray-450 uppercase font-bold border-b border-gray-150">
+                                    <th className="py-0.5 px-1 border-r border-gray-150 text-emerald-700 font-bold">Hadir</th>
+                                    <th className="py-0.5 px-1 border-r border-gray-150 text-gray-500 font-bold">Belum</th>
+                                    <th className="py-0.5 px-1 border-r border-gray-150 text-blue-700 font-bold">Sakit</th>
+                                    <th className="py-0.5 px-1 border-r border-gray-150 text-amber-700 font-bold">Izin</th>
+                                    <th className="py-0.5 px-1 text-red-700 font-bold">Alfa</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr className="font-bold text-gray-900 text-[11px]">
+                                    <td className="py-1 px-1 border-r border-gray-150 bg-emerald-50/10 text-emerald-700">{hadirCount}</td>
+                                    <td className="py-1 px-1 border-r border-gray-150 bg-gray-50/10 text-gray-600">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</td>
+                                    <td className="py-1 px-1 border-r border-gray-150 bg-blue-50/10 text-blue-700">{session.counts?.sakit || 0}</td>
+                                    <td className="py-1 px-1 border-r border-gray-150 bg-amber-50/10 text-amber-700">{session.counts?.izin || 0}</td>
+                                    <td className="py-1 px-1 bg-red-50/10 text-red-700">{session.counts?.alfa || 0}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </td>
 
-                                  <button
-                                    onClick={() => loadSession(session, 'detail')}
-                                    className="text-[11px] font-bold text-gray-700 hover:text-emerald-850 bg-gray-50 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-all border border-gray-150 flex items-center gap-0.5 whitespace-nowrap"
-                                  >
-                                    <span>Rekap</span>
-                                    <ChevronRight className="w-3 h-3 text-gray-450" />
-                                  </button>
+                            {/* 5. Aksi */}
+                            <td className="py-3 px-4 align-middle text-right">
+                              <div className="flex items-center gap-2 justify-end">
+                                {isSekretarisOrLeader ? (
+                                  <>
+                                    <button
+                                      onClick={() => setQrModalSession(session)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
+                                      title="Tampilkan Token QR"
+                                    >
+                                      <QrCode className="w-3 h-3" />
+                                      <span>Token QR</span>
+                                    </button>
 
-                                  <button
-                                    disabled={!canEditThis}
-                                    onClick={() => loadSession(session, 'edit')}
-                                    className={`p-1.5 rounded-lg border transition-all ${
-                                      canEditThis 
-                                        ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-100'
-                                        : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
-                                    }`}
-                                    title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
+                                    <button
+                                      onClick={() => loadSession(session, 'detail')}
+                                      className="text-[11px] font-bold text-gray-700 hover:text-emerald-850 bg-gray-50 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-all border border-gray-150 flex items-center gap-0.5 whitespace-nowrap"
+                                    >
+                                      <span>Rekap</span>
+                                      <ChevronRight className="w-3 h-3 text-gray-450" />
+                                    </button>
 
-                                  <button
-                                    disabled={!canEditThis}
-                                    onClick={() => handleDeleteSession(session.id, isLocked)}
-                                    className={`p-1.5 rounded-lg border transition-all ${
-                                      canEditThis 
-                                        ? 'text-red-600 bg-red-50 hover:bg-red-100 border-red-100'
-                                        : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
-                                    }`}
-                                    title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      setIsScannerOpen(true);
-                                      setScanSuccessResult(null);
-                                      setScanError(null);
-                                      setManualCode(session.id);
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
-                                    title="Scan QR Presensi"
-                                  >
-                                    <ScanLine className="w-3 h-3" />
-                                    <span>Scan QR</span>
-                                  </button>
+                                    <button
+                                      disabled={!canEditThis}
+                                      onClick={() => loadSession(session, 'edit')}
+                                      className={`p-1.5 rounded-lg border transition-all ${
+                                        canEditThis 
+                                          ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-100'
+                                          : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
+                                      }`}
+                                      title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
 
-                                  <button
-                                    onClick={() => loadSession(session, 'detail')}
-                                    className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 border border-gray-200/70 whitespace-nowrap"
-                                  >
-                                    <FileText className="w-3 h-3 text-emerald-600" />
-                                    <span>List Kehadiran</span>
-                                    <ChevronRight className="w-3 h-3 text-gray-450" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                    <button
+                                      disabled={!canEditThis}
+                                      onClick={() => handleDeleteSession(session.id, isLocked)}
+                                      className={`p-1.5 rounded-lg border transition-all ${
+                                        canEditThis 
+                                          ? 'text-red-600 bg-red-50 hover:bg-red-100 border-red-100'
+                                          : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
+                                      }`}
+                                      title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setIsScannerOpen(true);
+                                        setScanSuccessResult(null);
+                                        setScanError(null);
+                                        setManualCode(session.id);
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
+                                      title="Scan QR Presensi"
+                                    >
+                                      <ScanLine className="w-3 h-3" />
+                                      <span>Scan QR</span>
+                                    </button>
+
+                                    <button
+                                      onClick={() => loadSession(session, 'detail')}
+                                      className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 border border-gray-200/70 whitespace-nowrap"
+                                    >
+                                      <FileText className="w-3 h-3 text-emerald-600" />
+                                      <span>List Kehadiran</span>
+                                      <ChevronRight className="w-3 h-3 text-gray-455" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            </div> )}
         </div>
       )}
 
