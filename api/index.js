@@ -1,3 +1,3 @@
-// Vercel serverless entrypoint - uses pre-built CJS bundle
-const mod = require('../dist/server.cjs');
+// Vercel serverless entrypoint - server.cjs is copied here during build
+const mod = require('./server.cjs');
 module.exports = mod.default || mod;

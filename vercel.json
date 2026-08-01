@@ -1,10 +1,5 @@
 {
   "buildCommand": "npm run build",
-  "functions": {
-    "api/index.js": {
-      "includeFiles": "dist/server.cjs"
-    }
-  },
   "rewrites": [
     {
       "source": "/api/:path*",
@@ -12,7 +7,7 @@
     },
     {
       "source": "/((?!api|assets|favicon.ico|.*\\..*).*)",
-      "destination": "/index.html"
+      "destination": "/dist/index.html"
     }
   ]
 }
