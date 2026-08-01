@@ -591,16 +591,19 @@ export default function AttendanceView({ getToken, participants }: Props) {
       alert('Tidak ada data laporan harian untuk diekspor.');
       return;
     }
-    const excelData = dailyReportData.map((row, index) => ({
-      'Nomor': index + 1,
-      'Nama': row.name,
-      'NIM': row.nim || '-',
-      'Divisi': row.divisi || 'Anggota',
-      'Status': row.status || 'Belum Absen',
-      'Cek In (Jam)': row.checkInTime || '-',
-      'Cek Out (Jam)': row.checkOutTime || '-',
-      'Catatan': row.notes || '-'
-    }));
+    const excelData = dailyReportData.map((row, index) => {
+      const isHadir = row.status === 'Hadir';
+      return {
+        'Nomor': index + 1,
+        'Nama': row.name,
+        'NIM': row.nim || '-',
+        'Divisi': row.divisi || 'Anggota',
+        'Status': row.status || 'Belum Absen',
+        'Cek In (Jam)': isHadir ? (row.checkInTime || '-') : '-',
+        'Cek Out (Jam)': isHadir ? (row.checkOutTime || '-') : '-',
+        'Catatan': !isHadir ? (row.notes || row.status || '-') : (row.notes || '-')
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet([]);
     XLSX.utils.sheet_add_aoa(ws, [
@@ -643,8 +646,8 @@ export default function AttendanceView({ getToken, participants }: Props) {
     doc.text('Nama', 26, y + 5);
     doc.text('NIM', 85, y + 5);
     doc.text('Divisi', 115, y + 5);
-    doc.text('Cek In (jam)', 148, y + 5);
-    doc.text('Cek Out (jam)', 174, y + 5);
+    doc.text('Cek In / Status', 148, y + 5);
+    doc.text('Cek Out', 178, y + 5);
 
     doc.setTextColor(51, 65, 85);
     doc.setFont('helvetica', 'normal');
@@ -662,8 +665,8 @@ export default function AttendanceView({ getToken, participants }: Props) {
         doc.text('Nama', 26, y + 5);
         doc.text('NIM', 85, y + 5);
         doc.text('Divisi', 115, y + 5);
-        doc.text('Cek In (jam)', 148, y + 5);
-        doc.text('Cek Out (jam)', 174, y + 5);
+        doc.text('Cek In / Status', 148, y + 5);
+        doc.text('Cek Out', 178, y + 5);
         doc.setTextColor(51, 65, 85);
         doc.setFont('helvetica', 'normal');
         y += 8;
@@ -682,14 +685,26 @@ export default function AttendanceView({ getToken, participants }: Props) {
       doc.text(row.nim || '-', 85, y + 4);
       doc.text(row.divisi || 'Anggota', 115, y + 4);
 
-      doc.setFont('helvetica', row.checkInTime !== '-' ? 'bold' : 'normal');
-      if (row.checkInTime !== '-') doc.setTextColor(16, 185, 129);
-      doc.text(row.checkInTime || '-', 148, y + 4);
+      const isHadir = row.status === 'Hadir';
+      if (isHadir) {
+        doc.setFont('helvetica', row.checkInTime !== '-' ? 'bold' : 'normal');
+        if (row.checkInTime !== '-') doc.setTextColor(16, 185, 129);
+        doc.text(row.checkInTime || '-', 148, y + 4);
 
-      doc.setFont('helvetica', row.checkOutTime !== '-' ? 'bold' : 'normal');
-      if (row.checkOutTime !== '-') doc.setTextColor(59, 130, 246);
-      else doc.setTextColor(51, 65, 85);
-      doc.text(row.checkOutTime || '-', 174, y + 4);
+        doc.setFont('helvetica', row.checkOutTime !== '-' ? 'bold' : 'normal');
+        if (row.checkOutTime !== '-') doc.setTextColor(59, 130, 246);
+        else doc.setTextColor(51, 65, 85);
+        doc.text(row.checkOutTime || '-', 178, y + 4);
+      } else {
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(217, 119, 6); // amber-600
+        const notesDisp = row.notes || row.status || 'Belum Absen';
+        doc.text(notesDisp.length > 25 ? notesDisp.substring(0, 23) + '..' : notesDisp, 148, y + 4);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+        doc.text('-', 178, y + 4);
+      }
 
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(51, 65, 85);
@@ -1537,7 +1552,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                             </span>
                           </td>
                           <td className="p-3.5 text-center">
-                            {row.checkInTime !== '-' ? (
+                            {row.status === 'Hadir' && row.checkInTime !== '-' ? (
                               <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center justify-center gap-1 w-fit mx-auto">
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> {row.checkInTime}
                               </span>
@@ -1546,7 +1561,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                             )}
                           </td>
                           <td className="p-3.5 text-center">
-                            {row.checkOutTime !== '-' ? (
+                            {row.status === 'Hadir' && row.checkOutTime !== '-' ? (
                               <span className="text-xs font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 flex items-center justify-center gap-1 w-fit mx-auto">
                                 <CheckCircle className="w-3.5 h-3.5 text-blue-600" /> {row.checkOutTime}
                               </span>
@@ -1559,8 +1574,17 @@ export default function AttendanceView({ getToken, participants }: Props) {
                               const hasNotes = !!row.notes && row.notes !== '-';
                               const isCheckInScan = row.checkInTime !== '-';
                               
+                              if (row.status !== 'Hadir') {
+                                const displayVal = hasNotes ? row.notes : row.status || 'Belum Absen';
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100/60 px-2.5 py-0.5 rounded-md">
+                                    ℹ️ {displayVal}
+                                  </span>
+                                );
+                              }
+
                               if (!hasNotes) {
-                                if (row.status === 'Hadir' && isCheckInScan) {
+                                if (isCheckInScan) {
                                   return (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 rounded-md">
                                       ✓ Scan Mandiri

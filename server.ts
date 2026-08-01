@@ -782,12 +782,8 @@ async function startServer() {
       if (existingRec.length > 0) {
         const rec = existingRec[0];
         if (rec.checkInTime && rec.checkInTime !== '-') {
-          return res.json({
-            success: true,
-            already: true,
-            message: `Halo ${currentUser.name}, Anda sudah Check-In hari ini pukul ${rec.checkInTime}.`,
-            sessionTitle: `Absensi Harian Check-In (${dateStr})`,
-            name: currentUser.name
+          return res.status(400).json({
+            error: `Halo ${currentUser.name}, Anda sudah Check-In hari ini pukul ${rec.checkInTime}.`
           });
         }
         await safeUpdateRecord(rec.id, {
@@ -862,12 +858,8 @@ async function startServer() {
       if (existingRec.length > 0) {
         const rec = existingRec[0];
         if (rec.checkOutTime && rec.checkOutTime !== '-') {
-          return res.json({
-            success: true,
-            already: true,
-            message: `Halo ${currentUser.name}, Anda sudah Check-Out hari ini pukul ${rec.checkOutTime}.`,
-            sessionTitle: `Absensi Harian Check-Out (${dateStr})`,
-            name: currentUser.name
+          return res.status(400).json({
+            error: `Halo ${currentUser.name}, Anda sudah Check-Out hari ini pukul ${rec.checkOutTime}.`
           });
         }
         await safeUpdateRecord(rec.id, {
@@ -928,7 +920,7 @@ async function startServer() {
         if (existingRec.length > 0) {
           const rec = existingRec[0];
           if (rec.checkInTime && rec.checkInTime !== '-') {
-            return res.json({ success: true, already: true, message: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
+            return res.status(400).json({ error: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.` });
           }
           await safeUpdateRecord(rec.id, { status: 'Hadir', checkInTime: displayTime, notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}` });
         } else {
@@ -960,7 +952,7 @@ async function startServer() {
         if (existingRec.length > 0) {
           const rec = existingRec[0];
           if (rec.checkOutTime && rec.checkOutTime !== '-') {
-            return res.json({ success: true, already: true, message: `Halo ${currentUser.name}, Anda sudah Check-Out pukul ${rec.checkOutTime}.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
+            return res.status(400).json({ error: `Halo ${currentUser.name}, Anda sudah Check-Out pukul ${rec.checkOutTime}.` });
           }
           await safeUpdateRecord(rec.id, { checkOutTime: displayTime, notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}` });
         } else {
@@ -989,12 +981,8 @@ async function startServer() {
       if (records.length > 0) {
         const rec = records[0];
         if (rec.status === 'Hadir') {
-          return res.json({ 
-            success: true, 
-            already: true, 
-            message: `Halo ${currentUser.name}, Anda sudah tercatat HADIR pada sesi "${session[0].title}".`,
-            sessionTitle: session[0].title,
-            name: currentUser.name
+          return res.status(400).json({ 
+            error: `Halo ${currentUser.name}, Anda sudah tercatat HADIR pada sesi "${session[0].title}".`
           });
         }
 
