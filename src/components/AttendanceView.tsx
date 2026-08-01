@@ -942,33 +942,26 @@ export default function AttendanceView({ getToken, participants }: Props) {
 
                           {/* 4. Kehadiran */}
                           <td className="py-3 px-4 align-middle">
-                            <div className="flex flex-wrap items-center gap-1 bg-gray-50/60 p-1 rounded-xl border border-gray-100/50 w-fit">
-                              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[10px] whitespace-nowrap">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                                <span className="text-gray-450 font-medium">Hadir:</span>
-                                <span className="font-bold text-gray-900">{hadirCount}</span>
-                              </div>
-                              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[10px] whitespace-nowrap">
-                                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span>
-                                <span className="text-gray-450 font-medium">Belum:</span>
-                                <span className="font-bold text-gray-900">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</span>
-                              </div>
-                              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[10px] whitespace-nowrap">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
-                                <span className="text-gray-450 font-medium">Sakit:</span>
-                                <span className="font-bold text-gray-900">{session.counts?.sakit || 0}</span>
-                              </div>
-                              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[10px] whitespace-nowrap">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
-                                <span className="text-gray-450 font-medium">Izin:</span>
-                                <span className="font-bold text-gray-900">{session.counts?.izin || 0}</span>
-                              </div>
-                              <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[10px] whitespace-nowrap">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
-                                <span className="text-gray-450 font-medium">Alfa:</span>
-                                <span className="font-bold text-gray-900">{session.counts?.alfa || 0}</span>
-                              </div>
-                            </div>
+                            <table className="w-full max-w-[280px] text-center text-[10px] border border-gray-150 rounded-lg overflow-hidden bg-white">
+                              <thead>
+                                <tr className="bg-gray-50 text-[9px] text-gray-450 uppercase font-bold border-b border-gray-150">
+                                  <th className="py-0.5 px-1 border-r border-gray-150 text-emerald-700 font-bold">Hadir</th>
+                                  <th className="py-0.5 px-1 border-r border-gray-150 text-gray-500 font-bold">Belum</th>
+                                  <th className="py-0.5 px-1 border-r border-gray-150 text-blue-700 font-bold">Sakit</th>
+                                  <th className="py-0.5 px-1 border-r border-gray-150 text-amber-700 font-bold">Izin</th>
+                                  <th className="py-0.5 px-1 text-red-700 font-bold">Alfa</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr className="font-bold text-gray-900 text-[11px]">
+                                  <td className="py-1 px-1 border-r border-gray-150 bg-emerald-50/10 text-emerald-700">{hadirCount}</td>
+                                  <td className="py-1 px-1 border-r border-gray-150 bg-gray-50/10 text-gray-600">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</td>
+                                  <td className="py-1 px-1 border-r border-gray-150 bg-blue-50/10 text-blue-700">{session.counts?.sakit || 0}</td>
+                                  <td className="py-1 px-1 border-r border-gray-150 bg-amber-50/10 text-amber-700">{session.counts?.izin || 0}</td>
+                                  <td className="py-1 px-1 bg-red-50/10 text-red-700">{session.counts?.alfa || 0}</td>
+                                </tr>
+                              </tbody>
+                            </table>
                           </td>
 
                           {/* 5. Aksi */}
