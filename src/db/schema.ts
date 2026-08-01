@@ -73,6 +73,7 @@ export const attendanceSessions = pgTable('attendance_sessions', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   date: text('date').notNull(),
+  sessionType: text('session_type').default('event'), // 'event' | 'daily'
   notes: text('notes'),
   isPermanent: integer('is_permanent').default(0).notNull(), // 0 = draft, 1 = permanent
   createdBy: text('created_by').references(() => users.id).notNull(),
@@ -84,7 +85,9 @@ export const attendanceRecords = pgTable('attendance_records', {
   sessionId: text('session_id').references(() => attendanceSessions.id, { onDelete: 'cascade' }).notNull(),
   userId: text('user_id').references(() => users.id),
   name: text('name').notNull(),
-  status: text('status').notNull(), // 'Hadir' | 'Sakit' | 'Izin' | 'Alfa'
+  status: text('status').notNull(), // 'Hadir' | 'Sakit' | 'Izin' | 'Alfa' | 'Belum Absen'
+  checkInTime: text('check_in_time'),
+  checkOutTime: text('check_out_time'),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
 });

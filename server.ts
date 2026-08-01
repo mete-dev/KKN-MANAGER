@@ -488,20 +488,38 @@ async function startServer() {
         return res.status(400).json({ error: "Data restore harus memiliki minimal 1 pengguna." });
       }
 
-      // Format and sanitize users
-      const formattedUsers = backupUsers.map((u: any) => ({
-        id: String(u.id || uuidv4()),
-        nim: String(u.nim || ''),
-        phone: String(u.phone || ''),
-        password: String(u.password || ''),
-        email: String(u.email || ''),
-        name: String(u.name || ''),
-        role: String(u.role || 'Anggota'),
-        permissions: typeof u.permissions === 'object' 
-          ? JSON.stringify(u.permissions) 
-          : String(u.permissions || '{"participants":"r","finance":"r","tasks":"r","calendar":"r","attendance":"r"}'),
-        createdAt: u.createdAt ? new Date(u.createdAt) : new Date()
-      }));
+      const parseDate = (val: any): Date => {
+        if (!val) return new Date();
+        if (val instanceof Date && !isNaN(val.getTime())) return val;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? new Date() : d;
+      };
+
+      // Format and sanitize users with unique phones
+      const usedPhones = new Set<string>();
+      const formattedUsers = backupUsers.map((u: any, index: number) => {
+        const userId = String(u.id || uuidv4());
+        const nim = String(u.nim || '');
+        let phone = String(u.phone || '').trim();
+        if (!phone || usedPhones.has(phone)) {
+          phone = nim ? `08${nim}` : `0899${index}${Date.now().toString().slice(-4)}`;
+        }
+        usedPhones.add(phone);
+
+        return {
+          id: userId,
+          nim,
+          phone,
+          password: String(u.password || '$2a$10$defaultpasswordhash'),
+          email: String(u.email || `${nim || userId}@kkn.local`),
+          name: String(u.name || 'Anggota'),
+          role: String(u.role || 'Anggota'),
+          permissions: typeof u.permissions === 'object' && u.permissions !== null
+            ? JSON.stringify(u.permissions) 
+            : String(u.permissions || '{"participants":"r","finance":"r","tasks":"r","calendar":"r","attendance":"r"}'),
+          createdAt: parseDate(u.createdAt || u.created_at)
+        };
+      });
 
       // Validate Admin user is present in restored users to prevent lock out
       const hasAdmin = formattedUsers.some(u => u.nim === '223125416');
@@ -512,32 +530,32 @@ async function startServer() {
       // Format others
       const formattedEvents = backupEvents.map((e: any) => ({
         id: String(e.id || uuidv4()),
-        userId: String(e.userId || e.user_id || ''),
-        date: String(e.date || ''),
+        userId: String(e.userId || e.user_id || req.user!.id),
+        date: String(e.date || new Date().toISOString().split('T')[0]),
         time: String(e.time || '08:00'),
-        title: String(e.title || ''),
+        title: String(e.title || 'Kegiatan KKN'),
         description: e.description ? String(e.description) : null,
         category: String(e.category || 'other'),
-        createdAt: e.createdAt ? new Date(e.createdAt) : new Date()
+        createdAt: parseDate(e.createdAt || e.created_at)
       }));
 
       const formattedTransactions = backupTransactions.map((t: any) => ({
         id: String(t.id || uuidv4()),
-        userId: String(t.userId || t.user_id || ''),
-        date: String(t.date || ''),
-        description: String(t.description || ''),
+        userId: String(t.userId || t.user_id || req.user!.id),
+        date: String(t.date || new Date().toISOString().split('T')[0]),
+        description: String(t.description || 'Transaksi'),
         amount: Number(t.amount || 0),
         type: String(t.type || 'expense'),
         category: String(t.category || 'kas'),
         proofLink: String(t.proofLink || t.proof_link || ''),
         status: String(t.status || 'active'),
-        createdAt: t.createdAt ? new Date(t.createdAt) : new Date()
+        createdAt: parseDate(t.createdAt || t.created_at)
       }));
 
       const formattedTasks = backupTasks.map((t: any) => ({
         id: String(t.id || uuidv4()),
-        userId: String(t.userId || t.user_id || ''),
-        title: String(t.title || ''),
+        userId: String(t.userId || t.user_id || req.user!.id),
+        title: String(t.title || 'Tugas KKN'),
         description: t.description ? String(t.description) : null,
         assigneeId: t.assigneeId || t.assignee_id ? String(t.assigneeId || t.assignee_id) : null,
         status: String(t.status || 'todo'),
@@ -546,24 +564,24 @@ async function startServer() {
         deadline: t.deadline ? String(t.deadline) : null,
         priority: String(t.priority || 'Medium'),
         referenceLink: t.referenceLink || t.reference_link ? String(t.referenceLink || t.reference_link) : null,
-        createdAt: t.createdAt ? new Date(t.createdAt) : new Date()
+        createdAt: parseDate(t.createdAt || t.created_at)
       }));
 
       const formattedLogs = backupLogs.map((l: any) => ({
         id: String(l.id || uuidv4()),
-        userId: String(l.userId || l.user_id || ''),
-        action: String(l.action || ''),
+        userId: String(l.userId || l.user_id || req.user!.id),
+        action: String(l.action || 'Aktivitas'),
         details: l.details ? String(l.details) : null,
-        createdAt: l.createdAt ? new Date(l.createdAt) : new Date()
+        createdAt: parseDate(l.createdAt || l.created_at)
       }));
 
       const formattedTransactionLogs = backupTransactionLogs.map((tl: any) => ({
         id: String(tl.id || uuidv4()),
         transactionId: String(tl.transactionId || tl.transaction_id || ''),
-        userId: String(tl.userId || tl.user_id || ''),
+        userId: String(tl.userId || tl.user_id || req.user!.id),
         action: String(tl.action || 'Update'),
         changes: String(tl.changes || '[]'),
-        createdAt: tl.createdAt ? new Date(tl.createdAt) : new Date()
+        createdAt: parseDate(tl.createdAt || tl.created_at)
       }));
 
       const formattedAttendanceSessions = backupAttendanceSessions.map((s: any) => ({
@@ -572,8 +590,8 @@ async function startServer() {
         date: String(s.date || new Date().toISOString().split('T')[0]),
         notes: s.notes ? String(s.notes) : null,
         isPermanent: Number(s.isPermanent ?? s.is_permanent ?? 0),
-        createdBy: String(s.createdBy || s.created_by || ''),
-        createdAt: s.createdAt ? new Date(s.createdAt) : new Date()
+        createdBy: String(s.createdBy || s.created_by || req.user!.id),
+        createdAt: parseDate(s.createdAt || s.created_at)
       }));
 
       const formattedAttendanceRecords = backupAttendanceRecords.map((r: any) => ({
@@ -583,7 +601,7 @@ async function startServer() {
         name: String(r.name || 'Anggota'),
         status: String(r.status || 'Hadir'),
         notes: r.notes ? String(r.notes) : null,
-        createdAt: r.createdAt ? new Date(r.createdAt) : new Date()
+        createdAt: parseDate(r.createdAt || r.created_at)
       }));
 
       // Execute inside transaction to maintain integrity of the merge-upsert
@@ -593,12 +611,45 @@ async function startServer() {
         const existingUserIds = new Set(existingUsers.map(u => u.id));
         const usersToInsert = formattedUsers.filter(u => !existingUserIds.has(u.id));
         const usersToUpdate = formattedUsers.filter(u => existingUserIds.has(u.id));
+
         if (usersToInsert.length > 0) {
           await tx.insert(users).values(usersToInsert);
         }
         for (const u of usersToUpdate) {
           await tx.update(users).set(u).where(eq(users.id, u.id));
         }
+
+        // Set of all valid user IDs in DB
+        const validUserIds = new Set([
+          ...existingUsers.map(u => u.id),
+          ...formattedUsers.map(u => u.id)
+        ]);
+
+        // Sanitize FK user references
+        const fallbackUserId = req.user!.id;
+
+        formattedEvents.forEach(e => {
+          if (!validUserIds.has(e.userId)) e.userId = fallbackUserId;
+        });
+        formattedTransactions.forEach(t => {
+          if (!validUserIds.has(t.userId)) t.userId = fallbackUserId;
+        });
+        formattedTasks.forEach(t => {
+          if (!validUserIds.has(t.userId)) t.userId = fallbackUserId;
+          if (t.assigneeId && !validUserIds.has(t.assigneeId)) t.assigneeId = null;
+        });
+        formattedLogs.forEach(l => {
+          if (!validUserIds.has(l.userId)) l.userId = fallbackUserId;
+        });
+        formattedTransactionLogs.forEach(tl => {
+          if (!validUserIds.has(tl.userId)) tl.userId = fallbackUserId;
+        });
+        formattedAttendanceSessions.forEach(s => {
+          if (!validUserIds.has(s.createdBy)) s.createdBy = fallbackUserId;
+        });
+        formattedAttendanceRecords.forEach(r => {
+          if (r.userId && !validUserIds.has(r.userId)) r.userId = null;
+        });
 
         // 2. Events
         const existingEvents = await tx.select({ id: events.id }).from(events);
@@ -611,6 +662,14 @@ async function startServer() {
         for (const e of eventsToUpdate) {
           await tx.update(events).set(e).where(eq(events.id, e.id));
         }
+
+        const validEventIds = new Set([
+          ...existingEvents.map(e => e.id),
+          ...formattedEvents.map(e => e.id)
+        ]);
+        formattedTasks.forEach(t => {
+          if (t.eventId && !validEventIds.has(t.eventId)) t.eventId = null;
+        });
 
         // 3. Transactions
         const existingTransactions = await tx.select({ id: transactions.id }).from(transactions);
@@ -649,10 +708,16 @@ async function startServer() {
         }
 
         // 6. TransactionLogs
+        const validTransactionIds = new Set([
+          ...existingTransactions.map(t => t.id),
+          ...formattedTransactions.map(t => t.id)
+        ]);
+        const validTxLogs = formattedTransactionLogs.filter(tl => validTransactionIds.has(tl.transactionId));
+
         const existingTxLogs = await tx.select({ id: transactionLogs.id }).from(transactionLogs);
         const existingTxLogIds = new Set(existingTxLogs.map(tl => tl.id));
-        const txLogsToInsert = formattedTransactionLogs.filter(tl => !existingTxLogIds.has(tl.id));
-        const txLogsToUpdate = formattedTransactionLogs.filter(tl => existingTxLogIds.has(tl.id));
+        const txLogsToInsert = validTxLogs.filter(tl => !existingTxLogIds.has(tl.id));
+        const txLogsToUpdate = validTxLogs.filter(tl => existingTxLogIds.has(tl.id));
         if (txLogsToInsert.length > 0) {
           await tx.insert(transactionLogs).values(txLogsToInsert);
         }
@@ -673,10 +738,16 @@ async function startServer() {
         }
 
         // 8. AttendanceRecords
+        const validSessionIds = new Set([
+          ...existingSessions.map(s => s.id),
+          ...formattedAttendanceSessions.map(s => s.id)
+        ]);
+        const validAttRecords = formattedAttendanceRecords.filter(r => validSessionIds.has(r.sessionId));
+
         const existingRecords = await tx.select({ id: attendanceRecords.id }).from(attendanceRecords);
         const existingRecordIds = new Set(existingRecords.map(r => r.id));
-        const recordsToInsert = formattedAttendanceRecords.filter(r => !existingRecordIds.has(r.id));
-        const recordsToUpdate = formattedAttendanceRecords.filter(r => existingRecordIds.has(r.id));
+        const recordsToInsert = validAttRecords.filter(r => !existingRecordIds.has(r.id));
+        const recordsToUpdate = validAttRecords.filter(r => existingRecordIds.has(r.id));
         if (recordsToInsert.length > 0) {
           await tx.insert(attendanceRecords).values(recordsToInsert);
         }
@@ -701,13 +772,56 @@ async function startServer() {
           attendanceRecords: formattedAttendanceRecords.length
         }
       });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Gagal memproses restore database." });
+    } catch (e: any) {
+      console.error("Restore Error Details:", e);
+      res.status(500).json({ error: e?.message || "Gagal memproses restore database." });
     }
   });
 
   // --- ATTENDANCE (ABSENSI KEHADIRAN) ---
+  let attendanceSchemaMigrated = false;
+  const ensureAttendanceColumns = async () => {
+    if (attendanceSchemaMigrated) return;
+    try {
+      await pool.query(`ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS session_type TEXT DEFAULT 'event'`);
+    } catch (e) {
+      console.warn("Migration session_type error:", e);
+    }
+    try {
+      await pool.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_time TEXT`);
+    } catch (e) {
+      console.warn("Migration check_in_time error:", e);
+    }
+    try {
+      await pool.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_time TEXT`);
+    } catch (e) {
+      console.warn("Migration check_out_time error:", e);
+    }
+    attendanceSchemaMigrated = true;
+  };
+
+  // Ensure schema columns exist before handling any attendance request
+  app.use("/api/attendance*", async (req, res, next) => {
+    await ensureAttendanceColumns();
+    next();
+  });
+
+  const getWibDateTime = () => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+    const timeStr = now.toLocaleTimeString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const parts = timeStr.split(':').map(Number);
+    const hour = parts[0] || 0;
+    const minute = parts[1] || 0;
+    return { dateStr, timeStr, hour, minute };
+  };
+
   app.get("/api/attendance", requireAuth, async (req: AuthRequest, res) => {
     try {
       const sessions = await db.select().from(attendanceSessions);
@@ -720,6 +834,7 @@ async function startServer() {
           sakit: sessionRecords.filter(r => r.status === 'Sakit').length,
           izin: sessionRecords.filter(r => r.status === 'Izin').length,
           alfa: sessionRecords.filter(r => r.status === 'Alfa').length,
+          belumAbsen: sessionRecords.filter(r => r.status === 'Belum Absen' || !r.status).length,
           total: sessionRecords.length
         };
         return {
@@ -732,6 +847,386 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Gagal memuat data absensi." });
+    }
+  });
+
+  // Daily Attendance Report endpoint (5 columns: No, Nama, NIM, Divisi, Check In, Check Out)
+  app.get("/api/attendance/daily-report", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dateStr } = getWibDateTime();
+      const targetDate = (req.query.date as string) || dateStr;
+
+      const allUsers = await db.select().from(users);
+      
+      // Find or get daily session for this date
+      let dailySession = await db.select().from(attendanceSessions).where(
+        and(
+          eq(attendanceSessions.date, targetDate),
+          eq(attendanceSessions.sessionType, 'daily')
+        )
+      );
+
+      let recordsList: any[] = [];
+      if (dailySession.length > 0) {
+        recordsList = await db.select().from(attendanceRecords).where(
+          eq(attendanceRecords.sessionId, dailySession[0].id)
+        );
+      }
+
+      const report = allUsers.map((u, idx) => {
+        const rec = recordsList.find(r => r.userId === u.id);
+        return {
+          no: idx + 1,
+          id: u.id,
+          name: u.name,
+          nim: u.nim || '-',
+          divisi: u.role || 'Anggota',
+          checkInTime: rec?.checkInTime || '-',
+          checkOutTime: rec?.checkOutTime || '-',
+          status: rec?.status || 'Belum Absen'
+        };
+      });
+
+      res.json({
+        date: targetDate,
+        report,
+        totalUsers: allUsers.length
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal mengambil laporan harian." });
+    }
+  });
+
+  // Daily Check-In API
+  app.post("/api/attendance/daily/checkin", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dateStr, timeStr, hour, minute } = getWibDateTime();
+
+      // Check-In limit: Maximum 10:00 WIB
+      if (hour > 10 || (hour === 10 && minute > 0)) {
+        return res.status(400).json({
+          error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
+        });
+      }
+
+      const userId = req.user!.id;
+      const userList = await db.select().from(users).where(eq(users.id, userId));
+      if (userList.length === 0) {
+        return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+      }
+      const currentUser = userList[0];
+
+      // Find or create daily session
+      let dailySessions = await db.select().from(attendanceSessions).where(
+        and(
+          eq(attendanceSessions.date, dateStr),
+          eq(attendanceSessions.sessionType, 'daily')
+        )
+      );
+
+      let sessionId: string;
+      if (dailySessions.length === 0) {
+        sessionId = uuidv4();
+        await db.insert(attendanceSessions).values({
+          id: sessionId,
+          title: `Absensi Harian (${dateStr})`,
+          date: dateStr,
+          sessionType: 'daily',
+          notes: 'Absensi Harian Check-In / Check-Out',
+          createdBy: currentUser.id
+        });
+      } else {
+        sessionId = dailySessions[0].id;
+      }
+
+      // Check record
+      const existingRec = await db.select().from(attendanceRecords).where(
+        and(
+          eq(attendanceRecords.sessionId, sessionId),
+          eq(attendanceRecords.userId, userId)
+        )
+      );
+
+      const displayTime = `${timeStr.slice(0,5)} WIB`;
+
+      if (existingRec.length > 0) {
+        const rec = existingRec[0];
+        if (rec.checkInTime) {
+          return res.json({
+            success: true,
+            already: true,
+            message: `Halo ${currentUser.name}, Anda sudah Check-In hari ini pukul ${rec.checkInTime}.`,
+            sessionTitle: `Absensi Harian Check-In (${dateStr})`,
+            name: currentUser.name
+          });
+        }
+        await db.update(attendanceRecords).set({
+          status: 'Hadir',
+          checkInTime: displayTime,
+          notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}`
+        }).where(eq(attendanceRecords.id, rec.id));
+      } else {
+        await db.insert(attendanceRecords).values({
+          id: uuidv4(),
+          sessionId,
+          userId: currentUser.id,
+          name: currentUser.name,
+          status: 'Hadir',
+          checkInTime: displayTime,
+          notes: `Check-In ${displayTime}`
+        });
+      }
+
+      await logActivity(currentUser.id, "Check-In Harian", `Check-In harian berhasil pukul ${displayTime}`);
+
+      return res.json({
+        success: true,
+        message: `Check-In Berhasil! Halo ${currentUser.name}, kehadiran Anda telah dicatat pukul ${displayTime}.`,
+        sessionTitle: `Absensi Harian (${dateStr})`,
+        name: currentUser.name
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal memproses Check-In harian." });
+    }
+  });
+
+  // Daily Check-Out API
+  app.post("/api/attendance/daily/checkout", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { dateStr, timeStr, hour, minute } = getWibDateTime();
+
+      // Check-Out limit: Maximum 22:00 WIB
+      if (hour > 22 || (hour === 22 && minute > 0)) {
+        return res.status(400).json({
+          error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
+        });
+      }
+
+      const userId = req.user!.id;
+      const userList = await db.select().from(users).where(eq(users.id, userId));
+      if (userList.length === 0) {
+        return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+      }
+      const currentUser = userList[0];
+
+      // Find or create daily session
+      let dailySessions = await db.select().from(attendanceSessions).where(
+        and(
+          eq(attendanceSessions.date, dateStr),
+          eq(attendanceSessions.sessionType, 'daily')
+        )
+      );
+
+      let sessionId: string;
+      if (dailySessions.length === 0) {
+        sessionId = uuidv4();
+        await db.insert(attendanceSessions).values({
+          id: sessionId,
+          title: `Absensi Harian (${dateStr})`,
+          date: dateStr,
+          sessionType: 'daily',
+          notes: 'Absensi Harian Check-In / Check-Out',
+          createdBy: currentUser.id
+        });
+      } else {
+        sessionId = dailySessions[0].id;
+      }
+
+      // Check record
+      const existingRec = await db.select().from(attendanceRecords).where(
+        and(
+          eq(attendanceRecords.sessionId, sessionId),
+          eq(attendanceRecords.userId, userId)
+        )
+      );
+
+      const displayTime = `${timeStr.slice(0,5)} WIB`;
+
+      if (existingRec.length > 0) {
+        const rec = existingRec[0];
+        if (rec.checkOutTime) {
+          return res.json({
+            success: true,
+            already: true,
+            message: `Halo ${currentUser.name}, Anda sudah Check-Out hari ini pukul ${rec.checkOutTime}.`,
+            sessionTitle: `Absensi Harian Check-Out (${dateStr})`,
+            name: currentUser.name
+          });
+        }
+        await db.update(attendanceRecords).set({
+          checkOutTime: displayTime,
+          notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}`
+        }).where(eq(attendanceRecords.id, rec.id));
+      } else {
+        await db.insert(attendanceRecords).values({
+          id: uuidv4(),
+          sessionId,
+          userId: currentUser.id,
+          name: currentUser.name,
+          status: 'Hadir',
+          checkOutTime: displayTime,
+          notes: `Check-Out ${displayTime}`
+        });
+      }
+
+      await logActivity(currentUser.id, "Check-Out Harian", `Check-Out harian berhasil pukul ${displayTime}`);
+
+      return res.json({
+        success: true,
+        message: `Check-Out Berhasil! Halo ${currentUser.name}, waktu Check-Out Anda telah dicatat pukul ${displayTime}.`,
+        sessionTitle: `Absensi Harian (${dateStr})`,
+        name: currentUser.name
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal memproses Check-Out harian." });
+    }
+  });
+
+  app.post("/api/attendance/:id/scan", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const paramId = req.params.id;
+      
+      // Check if code corresponds to daily check-in or checkout
+      if (paramId.startsWith('DAILY_CHECKIN') || paramId === 'CHECKIN') {
+        // Forward internally to daily checkin logic
+        const { dateStr, timeStr, hour, minute } = getWibDateTime();
+        if (hour > 10 || (hour === 10 && minute > 0)) {
+          return res.status(400).json({
+            error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
+          });
+        }
+        const userId = req.user!.id;
+        const currentUser = (await db.select().from(users).where(eq(users.id, userId)))[0];
+        if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+
+        let dailySessions = await db.select().from(attendanceSessions).where(
+          and(eq(attendanceSessions.date, dateStr), eq(attendanceSessions.sessionType, 'daily'))
+        );
+        let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
+        if (dailySessions.length === 0) {
+          await db.insert(attendanceSessions).values({
+            id: sessionId, title: `Absensi Harian (${dateStr})`, date: dateStr, sessionType: 'daily', createdBy: currentUser.id
+          });
+        }
+        const existingRec = await db.select().from(attendanceRecords).where(
+          and(eq(attendanceRecords.sessionId, sessionId), eq(attendanceRecords.userId, userId))
+        );
+        const displayTime = `${timeStr.slice(0,5)} WIB`;
+        if (existingRec.length > 0) {
+          const rec = existingRec[0];
+          if (rec.checkInTime) {
+            return res.json({ success: true, already: true, message: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
+          }
+          await db.update(attendanceRecords).set({ status: 'Hadir', checkInTime: displayTime }).where(eq(attendanceRecords.id, rec.id));
+        } else {
+          await db.insert(attendanceRecords).values({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkInTime: displayTime });
+        }
+        return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
+      }
+
+      if (paramId.startsWith('DAILY_CHECKOUT') || paramId === 'CHECKOUT') {
+        const { dateStr, timeStr, hour, minute } = getWibDateTime();
+        if (hour > 22 || (hour === 22 && minute > 0)) {
+          return res.status(400).json({
+            error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
+          });
+        }
+        const userId = req.user!.id;
+        const currentUser = (await db.select().from(users).where(eq(users.id, userId)))[0];
+        if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+
+        let dailySessions = await db.select().from(attendanceSessions).where(
+          and(eq(attendanceSessions.date, dateStr), eq(attendanceSessions.sessionType, 'daily'))
+        );
+        let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
+        if (dailySessions.length === 0) {
+          await db.insert(attendanceSessions).values({
+            id: sessionId, title: `Absensi Harian (${dateStr})`, date: dateStr, sessionType: 'daily', createdBy: currentUser.id
+          });
+        }
+        const existingRec = await db.select().from(attendanceRecords).where(
+          and(eq(attendanceRecords.sessionId, sessionId), eq(attendanceRecords.userId, userId))
+        );
+        const displayTime = `${timeStr.slice(0,5)} WIB`;
+        if (existingRec.length > 0) {
+          const rec = existingRec[0];
+          if (rec.checkOutTime) {
+            return res.json({ success: true, already: true, message: `Halo ${currentUser.name}, Anda sudah Check-Out pukul ${rec.checkOutTime}.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
+          }
+          await db.update(attendanceRecords).set({ checkOutTime: displayTime }).where(eq(attendanceRecords.id, rec.id));
+        } else {
+          await db.insert(attendanceRecords).values({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkOutTime: displayTime });
+        }
+        return res.json({ success: true, message: `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
+      }
+
+      const sessionId = paramId;
+      const session = await db.select().from(attendanceSessions).where(eq(attendanceSessions.id, sessionId));
+      if (session.length === 0) {
+        return res.status(404).json({ error: "Sesi absensi tidak ditemukan. Pastikan Kode / QR Code valid." });
+      }
+
+      const userId = req.user!.id;
+      const userList = await db.select().from(users).where(eq(users.id, userId));
+      if (userList.length === 0) {
+        return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+      }
+      const currentUser = userList[0];
+
+      const records = await db.select().from(attendanceRecords).where(
+        and(
+          eq(attendanceRecords.sessionId, sessionId),
+          eq(attendanceRecords.userId, userId)
+        )
+      );
+
+      const { timeStr } = getWibDateTime();
+      const displayTime = `${timeStr.slice(0,5)} WIB`;
+
+      if (records.length > 0) {
+        const rec = records[0];
+        if (rec.status === 'Hadir') {
+          return res.json({ 
+            success: true, 
+            already: true, 
+            message: `Halo ${currentUser.name}, Anda sudah tercatat HADIR pada sesi "${session[0].title}".`,
+            sessionTitle: session[0].title,
+            name: currentUser.name
+          });
+        }
+
+        await db.update(attendanceRecords).set({
+          status: 'Hadir',
+          checkInTime: rec.checkInTime || displayTime,
+          notes: rec.notes ? `${rec.notes} (Scan QR ${displayTime})` : `Presensi via QR Scan (${displayTime})`
+        }).where(eq(attendanceRecords.id, rec.id));
+
+      } else {
+        await db.insert(attendanceRecords).values({
+          id: uuidv4(),
+          sessionId,
+          userId: currentUser.id,
+          name: currentUser.name,
+          status: 'Hadir',
+          checkInTime: displayTime,
+          notes: `Presensi via QR Scan (${displayTime})`
+        });
+      }
+
+      await logActivity(currentUser.id, "Presensi QR", `Berhasil melakukan presensi via QR pada: ${session[0].title}`);
+
+      return res.json({
+        success: true,
+        message: `Presensi Berhasil! Halo ${currentUser.name}, kehadiran Anda pada "${session[0].title}" telah dicatat.`,
+        sessionTitle: session[0].title,
+        name: currentUser.name
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal memproses presensi QR." });
     }
   });
 

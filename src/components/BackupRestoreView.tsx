@@ -13,6 +13,7 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
   const [restoreData, setRestoreData] = useState<any | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState<any | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const handleExportBackup = async () => {
     setLoading(true);
@@ -107,22 +108,43 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = xlsx.read(bstr, { type: 'binary' });
+        const buffer = evt.target?.result as ArrayBuffer;
+        if (!buffer) {
+          setRestoreError("Gagal membaca file. File kosong atau tidak valid.");
+          return;
+        }
+
+        const wb = xlsx.read(buffer, { type: 'array' });
         
-        // Read sheets
-        const sheetMap: any = {};
-        const expectedSheets = ["Users", "Transactions", "Tasks", "Events", "Logs", "TransactionLogs", "AttendanceSessions", "AttendanceRecords"];
+        // Read sheets case-insensitively
+        const sheetMap: Record<string, any[]> = {};
 
         wb.SheetNames.forEach(sheetName => {
-          if (expectedSheets.includes(sheetName)) {
-            const ws = wb.Sheets[sheetName];
-            sheetMap[sheetName] = xlsx.utils.sheet_to_json(ws);
+          const lowerName = sheetName.trim().toLowerCase();
+          const ws = wb.Sheets[sheetName];
+          const rows = xlsx.utils.sheet_to_json<any>(ws);
+
+          if (lowerName === 'users' || lowerName === 'user' || lowerName === 'pengguna') {
+            sheetMap["Users"] = rows;
+          } else if (lowerName === 'transactions' || lowerName === 'transaction' || lowerName === 'transaksi') {
+            sheetMap["Transactions"] = rows;
+          } else if (lowerName === 'tasks' || lowerName === 'task' || lowerName === 'tugas') {
+            sheetMap["Tasks"] = rows;
+          } else if (lowerName === 'events' || lowerName === 'event' || lowerName === 'jadwal' || lowerName === 'kegiatan') {
+            sheetMap["Events"] = rows;
+          } else if (lowerName === 'logs' || lowerName === 'log' || lowerName === 'logaktivitas') {
+            sheetMap["Logs"] = rows;
+          } else if (lowerName === 'transactionlogs' || lowerName === 'transaction_logs' || lowerName === 'logtransaksi') {
+            sheetMap["TransactionLogs"] = rows;
+          } else if (lowerName === 'attendancesessions' || lowerName === 'attendance_sessions' || lowerName === 'sesiabsensi') {
+            sheetMap["AttendanceSessions"] = rows;
+          } else if (lowerName === 'attendancerecords' || lowerName === 'attendance_records' || lowerName === 'catatanabsensi') {
+            sheetMap["AttendanceRecords"] = rows;
           }
         });
 
         if (!sheetMap["Users"] || sheetMap["Users"].length === 0) {
-          setRestoreError("Format file backup tidak valid. Sheet 'Users' wajib ada dan memiliki data.");
+          setRestoreError("Format file backup tidak valid. Sheet 'Users' (atau 'Pengguna') wajib ada dan memiliki data.");
           return;
         }
 
@@ -147,20 +169,21 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
         };
 
         setRestoreData(finalRestoreData);
-      } catch (err) {
-        console.error(err);
-        setRestoreError("Gagal membaca file backup Excel. Pastikan file tidak rusak.");
+      } catch (err: any) {
+        console.error("Excel parse error:", err);
+        setRestoreError(`Gagal membaca file Excel (${err?.message || 'Format tidak valid'}). Pastikan file tidak rusak.`);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
-  const handleExecuteRestore = async () => {
+  const handleExecuteRestore = () => {
     if (!restoreData) return;
-    if (!window.confirm("SINKRONISASI DATA: Sistem akan menggabungkan data baru dan memperbarui data lama dari file Excel ini tanpa menghapus data yang sudah ada di sistem saat ini. Apakah Anda yakin ingin melanjutkan?")) {
-      return;
-    }
+    setShowConfirmModal(true);
+  };
 
+  const executeRestore = async () => {
+    setShowConfirmModal(false);
     setLoading(true);
     setRestoreError(null);
     try {
@@ -410,9 +433,10 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
 
                 <div className="pt-2">
                   <button
+                    type="button"
                     onClick={handleExecuteRestore}
                     disabled={loading}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                     Gabungkan & Sinkronisasikan Data Sekarang
@@ -423,6 +447,46 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-gray-100">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="p-3 bg-amber-50 rounded-xl text-amber-600">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">Konfirmasi Sinkronisasi Data</h3>
+                <p className="text-xs text-gray-500">Proses Restore Non-Destruktif (Safe Merge)</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 p-3.5 rounded-xl border border-gray-100">
+              Sistem akan menggabungkan data baru dan memperbarui data lama dari file Excel ini tanpa menghapus data yang sudah ada di sistem saat ini. Apakah Anda yakin ingin melanjutkan?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeRestore}
+                disabled={loading}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:bg-gray-300"
+              >
+                {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Ya, Lanjutkan Sinkronisasi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
