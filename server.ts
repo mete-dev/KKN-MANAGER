@@ -726,15 +726,36 @@ async function startServer() {
         }
 
         // 7. AttendanceSessions
+        await checkAttendanceColumns();
         const existingSessions = await tx.select({ id: attendanceSessions.id }).from(attendanceSessions);
         const existingSessionIds = new Set(existingSessions.map(s => s.id));
         const sessionsToInsert = formattedAttendanceSessions.filter(s => !existingSessionIds.has(s.id));
         const sessionsToUpdate = formattedAttendanceSessions.filter(s => existingSessionIds.has(s.id));
-        if (sessionsToInsert.length > 0) {
-          await tx.insert(attendanceSessions).values(sessionsToInsert);
+
+        for (const s of sessionsToInsert) {
+          const valObj: any = {
+            id: s.id,
+            title: s.title,
+            date: s.date,
+            notes: s.notes,
+            isPermanent: s.isPermanent,
+            createdBy: s.createdBy,
+            createdAt: s.createdAt
+          };
+          if (hasSessionTypeCol && s.sessionType) valObj.sessionType = s.sessionType;
+          await tx.insert(attendanceSessions).values(valObj);
         }
+
         for (const s of sessionsToUpdate) {
-          await tx.update(attendanceSessions).set(s).where(eq(attendanceSessions.id, s.id));
+          const valObj: any = {
+            title: s.title,
+            date: s.date,
+            notes: s.notes,
+            isPermanent: s.isPermanent,
+            createdBy: s.createdBy
+          };
+          if (hasSessionTypeCol && s.sessionType) valObj.sessionType = s.sessionType;
+          await tx.update(attendanceSessions).set(valObj).where(eq(attendanceSessions.id, s.id));
         }
 
         // 8. AttendanceRecords
@@ -748,11 +769,33 @@ async function startServer() {
         const existingRecordIds = new Set(existingRecords.map(r => r.id));
         const recordsToInsert = validAttRecords.filter(r => !existingRecordIds.has(r.id));
         const recordsToUpdate = validAttRecords.filter(r => existingRecordIds.has(r.id));
-        if (recordsToInsert.length > 0) {
-          await tx.insert(attendanceRecords).values(recordsToInsert);
+
+        for (const r of recordsToInsert) {
+          const valObj: any = {
+            id: r.id,
+            sessionId: r.sessionId,
+            userId: r.userId,
+            name: r.name,
+            status: r.status,
+            notes: r.notes,
+            createdAt: r.createdAt
+          };
+          if (hasCheckInTimeCol && r.checkInTime) valObj.checkInTime = r.checkInTime;
+          if (hasCheckOutTimeCol && r.checkOutTime) valObj.checkOutTime = r.checkOutTime;
+          await tx.insert(attendanceRecords).values(valObj);
         }
+
         for (const r of recordsToUpdate) {
-          await tx.update(attendanceRecords).set(r).where(eq(attendanceRecords.id, r.id));
+          const valObj: any = {
+            sessionId: r.sessionId,
+            userId: r.userId,
+            name: r.name,
+            status: r.status,
+            notes: r.notes
+          };
+          if (hasCheckInTimeCol && r.checkInTime) valObj.checkInTime = r.checkInTime;
+          if (hasCheckOutTimeCol && r.checkOutTime) valObj.checkOutTime = r.checkOutTime;
+          await tx.update(attendanceRecords).set(valObj).where(eq(attendanceRecords.id, r.id));
         }
       });
 
@@ -779,32 +822,258 @@ async function startServer() {
   });
 
   // --- ATTENDANCE (ABSENSI KEHADIRAN) ---
-  let attendanceSchemaMigrated = false;
-  const ensureAttendanceColumns = async () => {
-    if (attendanceSchemaMigrated) return;
+  let hasSessionTypeCol = false;
+  let hasCheckInTimeCol = false;
+  let hasCheckOutTimeCol = false;
+
+  const checkAttendanceColumns = async () => {
     try {
-      await pool.query(`ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS session_type TEXT DEFAULT 'event'`);
+      const resSess = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'attendance_sessions' AND column_name = 'session_type'
+      `);
+      hasSessionTypeCol = resSess.rows.length > 0;
     } catch (e) {
-      console.warn("Migration session_type error:", e);
+      hasSessionTypeCol = false;
     }
+
     try {
-      await pool.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_time TEXT`);
+      const resRecIn = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'attendance_records' AND column_name = 'check_in_time'
+      `);
+      hasCheckInTimeCol = resRecIn.rows.length > 0;
     } catch (e) {
-      console.warn("Migration check_in_time error:", e);
+      hasCheckInTimeCol = false;
     }
+
     try {
-      await pool.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_time TEXT`);
+      const resRecOut = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'attendance_records' AND column_name = 'check_out_time'
+      `);
+      hasCheckOutTimeCol = resRecOut.rows.length > 0;
     } catch (e) {
-      console.warn("Migration check_out_time error:", e);
+      hasCheckOutTimeCol = false;
     }
-    attendanceSchemaMigrated = true;
+
+    if (!hasSessionTypeCol) {
+      try {
+        await pool.query(`ALTER TABLE attendance_sessions ADD COLUMN session_type TEXT DEFAULT 'event'`);
+        hasSessionTypeCol = true;
+      } catch (e) {}
+    }
+    if (!hasCheckInTimeCol) {
+      try {
+        await pool.query(`ALTER TABLE attendance_records ADD COLUMN check_in_time TEXT`);
+        hasCheckInTimeCol = true;
+      } catch (e) {}
+    }
+    if (!hasCheckOutTimeCol) {
+      try {
+        await pool.query(`ALTER TABLE attendance_records ADD COLUMN check_out_time TEXT`);
+        hasCheckOutTimeCol = true;
+      } catch (e) {}
+    }
   };
 
-  // Ensure schema columns exist before handling any attendance request
-  app.use("/api/attendance*", async (req, res, next) => {
-    await ensureAttendanceColumns();
-    next();
-  });
+  const parseTimeFromNotes = (notes: string | null | undefined, tag: string) => {
+    if (!notes) return null;
+    const match = notes.match(new RegExp(`${tag}\\s+([0-9]{2}:[0-9]{2}\\s*WIB)`, 'i'));
+    return match ? match[1] : null;
+  };
+
+  const safeSelectSessions = async () => {
+    await checkAttendanceColumns();
+    if (hasSessionTypeCol) {
+      return await db.select().from(attendanceSessions);
+    } else {
+      const res = await db.select({
+        id: attendanceSessions.id,
+        title: attendanceSessions.title,
+        date: attendanceSessions.date,
+        notes: attendanceSessions.notes,
+        isPermanent: attendanceSessions.isPermanent,
+        createdBy: attendanceSessions.createdBy,
+        createdAt: attendanceSessions.createdAt,
+      }).from(attendanceSessions);
+
+      return res.map(s => ({
+        ...s,
+        sessionType: 'event'
+      }));
+    }
+  };
+
+  const safeSelectSessionById = async (id: string) => {
+    await checkAttendanceColumns();
+    if (hasSessionTypeCol) {
+      return await db.select().from(attendanceSessions).where(eq(attendanceSessions.id, id));
+    } else {
+      const res = await db.select({
+        id: attendanceSessions.id,
+        title: attendanceSessions.title,
+        date: attendanceSessions.date,
+        notes: attendanceSessions.notes,
+        isPermanent: attendanceSessions.isPermanent,
+        createdBy: attendanceSessions.createdBy,
+        createdAt: attendanceSessions.createdAt,
+      }).from(attendanceSessions).where(eq(attendanceSessions.id, id));
+
+      return res.map(s => ({
+        ...s,
+        sessionType: 'event'
+      }));
+    }
+  };
+
+  const safeSelectDailySession = async (targetDate: string) => {
+    await checkAttendanceColumns();
+    if (hasSessionTypeCol) {
+      return await db.select().from(attendanceSessions).where(
+        and(
+          eq(attendanceSessions.date, targetDate),
+          eq(attendanceSessions.sessionType, 'daily')
+        )
+      );
+    } else {
+      const res = await db.select({
+        id: attendanceSessions.id,
+        title: attendanceSessions.title,
+        date: attendanceSessions.date,
+        notes: attendanceSessions.notes,
+        isPermanent: attendanceSessions.isPermanent,
+        createdBy: attendanceSessions.createdBy,
+        createdAt: attendanceSessions.createdAt,
+      }).from(attendanceSessions).where(eq(attendanceSessions.date, targetDate));
+
+      const daily = res.filter(s => s.title.startsWith('Absensi Harian'));
+      return daily.map(s => ({ ...s, sessionType: 'daily' }));
+    }
+  };
+
+  const safeInsertSession = async (sessionData: {
+    id: string;
+    title: string;
+    date: string;
+    sessionType?: string;
+    notes?: string | null;
+    isPermanent?: number;
+    createdBy: string;
+  }) => {
+    await checkAttendanceColumns();
+    if (hasSessionTypeCol) {
+      await db.insert(attendanceSessions).values({
+        id: sessionData.id,
+        title: sessionData.title,
+        date: sessionData.date,
+        sessionType: sessionData.sessionType || 'event',
+        notes: sessionData.notes || null,
+        isPermanent: sessionData.isPermanent ?? 0,
+        createdBy: sessionData.createdBy,
+      });
+    } else {
+      await db.insert(attendanceSessions).values({
+        id: sessionData.id,
+        title: sessionData.title,
+        date: sessionData.date,
+        notes: sessionData.notes || null,
+        isPermanent: sessionData.isPermanent ?? 0,
+        createdBy: sessionData.createdBy,
+      });
+    }
+  };
+
+  const safeSelectRecords = async () => {
+    await checkAttendanceColumns();
+    if (hasCheckInTimeCol && hasCheckOutTimeCol) {
+      return await db.select().from(attendanceRecords);
+    } else {
+      const raw = await db.select({
+        id: attendanceRecords.id,
+        sessionId: attendanceRecords.sessionId,
+        userId: attendanceRecords.userId,
+        name: attendanceRecords.name,
+        status: attendanceRecords.status,
+        notes: attendanceRecords.notes,
+        createdAt: attendanceRecords.createdAt,
+        ...(hasCheckInTimeCol ? { checkInTime: attendanceRecords.checkInTime } : {}),
+        ...(hasCheckOutTimeCol ? { checkOutTime: attendanceRecords.checkOutTime } : {}),
+      }).from(attendanceRecords);
+
+      return raw.map(r => ({
+        ...r,
+        checkInTime: (r as any).checkInTime || parseTimeFromNotes(r.notes, 'Check-In') || '-',
+        checkOutTime: (r as any).checkOutTime || parseTimeFromNotes(r.notes, 'Check-Out') || '-'
+      }));
+    }
+  };
+
+  const safeSelectRecordsBySessionId = async (sessionId: string) => {
+    await checkAttendanceColumns();
+    if (hasCheckInTimeCol && hasCheckOutTimeCol) {
+      return await db.select().from(attendanceRecords).where(eq(attendanceRecords.sessionId, sessionId));
+    } else {
+      const raw = await db.select({
+        id: attendanceRecords.id,
+        sessionId: attendanceRecords.sessionId,
+        userId: attendanceRecords.userId,
+        name: attendanceRecords.name,
+        status: attendanceRecords.status,
+        notes: attendanceRecords.notes,
+        createdAt: attendanceRecords.createdAt,
+        ...(hasCheckInTimeCol ? { checkInTime: attendanceRecords.checkInTime } : {}),
+        ...(hasCheckOutTimeCol ? { checkOutTime: attendanceRecords.checkOutTime } : {}),
+      }).from(attendanceRecords).where(eq(attendanceRecords.sessionId, sessionId));
+
+      return raw.map(r => ({
+        ...r,
+        checkInTime: (r as any).checkInTime || parseTimeFromNotes(r.notes, 'Check-In') || '-',
+        checkOutTime: (r as any).checkOutTime || parseTimeFromNotes(r.notes, 'Check-Out') || '-'
+      }));
+    }
+  };
+
+  const safeInsertRecord = async (recordData: {
+    id: string;
+    sessionId: string;
+    userId?: string | null;
+    name: string;
+    status: string;
+    checkInTime?: string | null;
+    checkOutTime?: string | null;
+    notes?: string | null;
+  }) => {
+    await checkAttendanceColumns();
+    const insertObj: any = {
+      id: recordData.id,
+      sessionId: recordData.sessionId,
+      userId: recordData.userId || null,
+      name: recordData.name,
+      status: recordData.status,
+      notes: recordData.notes || null,
+    };
+    if (hasCheckInTimeCol && recordData.checkInTime) insertObj.checkInTime = recordData.checkInTime;
+    if (hasCheckOutTimeCol && recordData.checkOutTime) insertObj.checkOutTime = recordData.checkOutTime;
+
+    await db.insert(attendanceRecords).values(insertObj);
+  };
+
+  const safeUpdateRecord = async (id: string, recordData: {
+    status?: string;
+    checkInTime?: string | null;
+    checkOutTime?: string | null;
+    notes?: string | null;
+  }) => {
+    await checkAttendanceColumns();
+    const updateObj: any = {};
+    if (recordData.status !== undefined) updateObj.status = recordData.status;
+    if (recordData.notes !== undefined) updateObj.notes = recordData.notes;
+    if (hasCheckInTimeCol && recordData.checkInTime !== undefined) updateObj.checkInTime = recordData.checkInTime;
+    if (hasCheckOutTimeCol && recordData.checkOutTime !== undefined) updateObj.checkOutTime = recordData.checkOutTime;
+
+    await db.update(attendanceRecords).set(updateObj).where(eq(attendanceRecords.id, id));
+  };
 
   const getWibDateTime = () => {
     const now = new Date();
@@ -824,8 +1093,8 @@ async function startServer() {
 
   app.get("/api/attendance", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const sessions = await db.select().from(attendanceSessions);
-      const records = await db.select().from(attendanceRecords);
+      const sessions = await safeSelectSessions();
+      const records = await safeSelectRecords();
       
       const mapped = sessions.map(session => {
         const sessionRecords = records.filter(r => r.sessionId === session.id);
@@ -857,20 +1126,11 @@ async function startServer() {
       const targetDate = (req.query.date as string) || dateStr;
 
       const allUsers = await db.select().from(users);
-      
-      // Find or get daily session for this date
-      let dailySession = await db.select().from(attendanceSessions).where(
-        and(
-          eq(attendanceSessions.date, targetDate),
-          eq(attendanceSessions.sessionType, 'daily')
-        )
-      );
+      const dailySession = await safeSelectDailySession(targetDate);
 
       let recordsList: any[] = [];
       if (dailySession.length > 0) {
-        recordsList = await db.select().from(attendanceRecords).where(
-          eq(attendanceRecords.sessionId, dailySession[0].id)
-        );
+        recordsList = await safeSelectRecordsBySessionId(dailySession[0].id);
       }
 
       const report = allUsers.map((u, idx) => {
@@ -878,12 +1138,14 @@ async function startServer() {
         return {
           no: idx + 1,
           id: u.id,
+          recordId: rec?.id || null,
           name: u.name,
           nim: u.nim || '-',
           divisi: u.role || 'Anggota',
-          checkInTime: rec?.checkInTime || '-',
-          checkOutTime: rec?.checkOutTime || '-',
-          status: rec?.status || 'Belum Absen'
+          checkInTime: rec?.checkInTime || parseTimeFromNotes(rec?.notes, 'Check-In') || '-',
+          checkOutTime: rec?.checkOutTime || parseTimeFromNotes(rec?.notes, 'Check-Out') || '-',
+          status: rec?.status || 'Belum Absen',
+          notes: rec?.notes || ''
         };
       });
 
@@ -895,6 +1157,86 @@ async function startServer() {
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Gagal mengambil laporan harian." });
+    }
+  });
+
+  // PUT /api/attendance/daily-report - Edit daily attendance record (Sekretaris, Kesekretariatan, Ketua, Admin)
+  app.put("/api/attendance/daily-report", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const currentUser = (await db.select().from(users).where(eq(users.id, req.user!.id)))[0];
+      if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+
+      const roleNorm = (currentUser.role || '').toLowerCase();
+      const isSuperAdmin = currentUser.nim === '223125416';
+      const isAllowed = 
+        roleNorm.includes('sekretaris') || 
+        roleNorm.includes('kesekretariatan') || 
+        roleNorm.includes('ketua') || 
+        isSuperAdmin;
+
+      if (!isAllowed) {
+        return res.status(403).json({ error: "Akses ditolak. Fitur ini khusus Sekretaris, Kesekretariatan, dan Ketua." });
+      }
+
+      const { date, userId, status, checkInTime, checkOutTime, notes } = req.body;
+      if (!date || !userId) {
+        return res.status(400).json({ error: "Tanggal dan ID Pengguna wajib diisi." });
+      }
+
+      const targetUserList = await db.select().from(users).where(eq(users.id, userId));
+      if (targetUserList.length === 0) {
+        return res.status(404).json({ error: "Pengguna target tidak ditemukan." });
+      }
+      const targetUser = targetUserList[0];
+
+      let dailySessions = await safeSelectDailySession(date);
+      let sessionId: string;
+      if (dailySessions.length === 0) {
+        sessionId = uuidv4();
+        await safeInsertSession({
+          id: sessionId,
+          title: `Absensi Harian (${date})`,
+          date,
+          sessionType: 'daily',
+          notes: 'Absensi Harian Check-In / Check-Out',
+          createdBy: currentUser.id
+        });
+      } else {
+        sessionId = dailySessions[0].id;
+      }
+
+      const existingRecords = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
+
+      if (existingRecords.length > 0) {
+        const rec = existingRecords[0];
+        await safeUpdateRecord(rec.id, {
+          status: status || rec.status,
+          checkInTime: checkInTime !== undefined ? checkInTime : rec.checkInTime,
+          checkOutTime: checkOutTime !== undefined ? checkOutTime : rec.checkOutTime,
+          notes: notes !== undefined ? notes : rec.notes
+        });
+      } else {
+        await safeInsertRecord({
+          id: uuidv4(),
+          sessionId,
+          userId: targetUser.id,
+          name: targetUser.name,
+          status: status || 'Hadir',
+          checkInTime: checkInTime || '-',
+          checkOutTime: checkOutTime || '-',
+          notes: notes || null
+        });
+      }
+
+      await logActivity(currentUser.id, "Edit Absensi Harian", `Mengubah status absensi harian ${targetUser.name} (${date}) menjadi ${status}`);
+
+      return res.json({
+        success: true,
+        message: `Berhasil mengubah absensi harian ${targetUser.name}.`
+      });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "Gagal memperbarui absensi harian." });
     }
   });
 
@@ -917,18 +1259,12 @@ async function startServer() {
       }
       const currentUser = userList[0];
 
-      // Find or create daily session
-      let dailySessions = await db.select().from(attendanceSessions).where(
-        and(
-          eq(attendanceSessions.date, dateStr),
-          eq(attendanceSessions.sessionType, 'daily')
-        )
-      );
+      let dailySessions = await safeSelectDailySession(dateStr);
 
       let sessionId: string;
       if (dailySessions.length === 0) {
         sessionId = uuidv4();
-        await db.insert(attendanceSessions).values({
+        await safeInsertSession({
           id: sessionId,
           title: `Absensi Harian (${dateStr})`,
           date: dateStr,
@@ -940,19 +1276,12 @@ async function startServer() {
         sessionId = dailySessions[0].id;
       }
 
-      // Check record
-      const existingRec = await db.select().from(attendanceRecords).where(
-        and(
-          eq(attendanceRecords.sessionId, sessionId),
-          eq(attendanceRecords.userId, userId)
-        )
-      );
-
+      const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
       const displayTime = `${timeStr.slice(0,5)} WIB`;
 
       if (existingRec.length > 0) {
         const rec = existingRec[0];
-        if (rec.checkInTime) {
+        if (rec.checkInTime && rec.checkInTime !== '-') {
           return res.json({
             success: true,
             already: true,
@@ -961,13 +1290,13 @@ async function startServer() {
             name: currentUser.name
           });
         }
-        await db.update(attendanceRecords).set({
+        await safeUpdateRecord(rec.id, {
           status: 'Hadir',
           checkInTime: displayTime,
           notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}`
-        }).where(eq(attendanceRecords.id, rec.id));
+        });
       } else {
-        await db.insert(attendanceRecords).values({
+        await safeInsertRecord({
           id: uuidv4(),
           sessionId,
           userId: currentUser.id,
@@ -1011,18 +1340,12 @@ async function startServer() {
       }
       const currentUser = userList[0];
 
-      // Find or create daily session
-      let dailySessions = await db.select().from(attendanceSessions).where(
-        and(
-          eq(attendanceSessions.date, dateStr),
-          eq(attendanceSessions.sessionType, 'daily')
-        )
-      );
+      let dailySessions = await safeSelectDailySession(dateStr);
 
       let sessionId: string;
       if (dailySessions.length === 0) {
         sessionId = uuidv4();
-        await db.insert(attendanceSessions).values({
+        await safeInsertSession({
           id: sessionId,
           title: `Absensi Harian (${dateStr})`,
           date: dateStr,
@@ -1034,19 +1357,12 @@ async function startServer() {
         sessionId = dailySessions[0].id;
       }
 
-      // Check record
-      const existingRec = await db.select().from(attendanceRecords).where(
-        and(
-          eq(attendanceRecords.sessionId, sessionId),
-          eq(attendanceRecords.userId, userId)
-        )
-      );
-
+      const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
       const displayTime = `${timeStr.slice(0,5)} WIB`;
 
       if (existingRec.length > 0) {
         const rec = existingRec[0];
-        if (rec.checkOutTime) {
+        if (rec.checkOutTime && rec.checkOutTime !== '-') {
           return res.json({
             success: true,
             already: true,
@@ -1055,12 +1371,12 @@ async function startServer() {
             name: currentUser.name
           });
         }
-        await db.update(attendanceRecords).set({
+        await safeUpdateRecord(rec.id, {
           checkOutTime: displayTime,
           notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}`
-        }).where(eq(attendanceRecords.id, rec.id));
+        });
       } else {
-        await db.insert(attendanceRecords).values({
+        await safeInsertRecord({
           id: uuidv4(),
           sessionId,
           userId: currentUser.id,
@@ -1091,7 +1407,6 @@ async function startServer() {
       
       // Check if code corresponds to daily check-in or checkout
       if (paramId.startsWith('DAILY_CHECKIN') || paramId === 'CHECKIN') {
-        // Forward internally to daily checkin logic
         const { dateStr, timeStr, hour, minute } = getWibDateTime();
         if (hour > 10 || (hour === 10 && minute > 0)) {
           return res.status(400).json({
@@ -1102,27 +1417,23 @@ async function startServer() {
         const currentUser = (await db.select().from(users).where(eq(users.id, userId)))[0];
         if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
 
-        let dailySessions = await db.select().from(attendanceSessions).where(
-          and(eq(attendanceSessions.date, dateStr), eq(attendanceSessions.sessionType, 'daily'))
-        );
+        let dailySessions = await safeSelectDailySession(dateStr);
         let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
         if (dailySessions.length === 0) {
-          await db.insert(attendanceSessions).values({
+          await safeInsertSession({
             id: sessionId, title: `Absensi Harian (${dateStr})`, date: dateStr, sessionType: 'daily', createdBy: currentUser.id
           });
         }
-        const existingRec = await db.select().from(attendanceRecords).where(
-          and(eq(attendanceRecords.sessionId, sessionId), eq(attendanceRecords.userId, userId))
-        );
+        const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
         const displayTime = `${timeStr.slice(0,5)} WIB`;
         if (existingRec.length > 0) {
           const rec = existingRec[0];
-          if (rec.checkInTime) {
+          if (rec.checkInTime && rec.checkInTime !== '-') {
             return res.json({ success: true, already: true, message: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
           }
-          await db.update(attendanceRecords).set({ status: 'Hadir', checkInTime: displayTime }).where(eq(attendanceRecords.id, rec.id));
+          await safeUpdateRecord(rec.id, { status: 'Hadir', checkInTime: displayTime, notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}` });
         } else {
-          await db.insert(attendanceRecords).values({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkInTime: displayTime });
+          await safeInsertRecord({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkInTime: displayTime, notes: `Check-In ${displayTime}` });
         }
         return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
       }
@@ -1138,33 +1449,29 @@ async function startServer() {
         const currentUser = (await db.select().from(users).where(eq(users.id, userId)))[0];
         if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
 
-        let dailySessions = await db.select().from(attendanceSessions).where(
-          and(eq(attendanceSessions.date, dateStr), eq(attendanceSessions.sessionType, 'daily'))
-        );
+        let dailySessions = await safeSelectDailySession(dateStr);
         let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
         if (dailySessions.length === 0) {
-          await db.insert(attendanceSessions).values({
+          await safeInsertSession({
             id: sessionId, title: `Absensi Harian (${dateStr})`, date: dateStr, sessionType: 'daily', createdBy: currentUser.id
           });
         }
-        const existingRec = await db.select().from(attendanceRecords).where(
-          and(eq(attendanceRecords.sessionId, sessionId), eq(attendanceRecords.userId, userId))
-        );
+        const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
         const displayTime = `${timeStr.slice(0,5)} WIB`;
         if (existingRec.length > 0) {
           const rec = existingRec[0];
-          if (rec.checkOutTime) {
+          if (rec.checkOutTime && rec.checkOutTime !== '-') {
             return res.json({ success: true, already: true, message: `Halo ${currentUser.name}, Anda sudah Check-Out pukul ${rec.checkOutTime}.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
           }
-          await db.update(attendanceRecords).set({ checkOutTime: displayTime }).where(eq(attendanceRecords.id, rec.id));
+          await safeUpdateRecord(rec.id, { checkOutTime: displayTime, notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}` });
         } else {
-          await db.insert(attendanceRecords).values({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkOutTime: displayTime });
+          await safeInsertRecord({ id: uuidv4(), sessionId, userId: currentUser.id, name: currentUser.name, status: 'Hadir', checkOutTime: displayTime, notes: `Check-Out ${displayTime}` });
         }
         return res.json({ success: true, message: `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
       }
 
       const sessionId = paramId;
-      const session = await db.select().from(attendanceSessions).where(eq(attendanceSessions.id, sessionId));
+      const session = await safeSelectSessionById(sessionId);
       if (session.length === 0) {
         return res.status(404).json({ error: "Sesi absensi tidak ditemukan. Pastikan Kode / QR Code valid." });
       }
@@ -1176,12 +1483,7 @@ async function startServer() {
       }
       const currentUser = userList[0];
 
-      const records = await db.select().from(attendanceRecords).where(
-        and(
-          eq(attendanceRecords.sessionId, sessionId),
-          eq(attendanceRecords.userId, userId)
-        )
-      );
+      const records = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
 
       const { timeStr } = getWibDateTime();
       const displayTime = `${timeStr.slice(0,5)} WIB`;
@@ -1198,14 +1500,14 @@ async function startServer() {
           });
         }
 
-        await db.update(attendanceRecords).set({
+        await safeUpdateRecord(rec.id, {
           status: 'Hadir',
           checkInTime: rec.checkInTime || displayTime,
           notes: rec.notes ? `${rec.notes} (Scan QR ${displayTime})` : `Presensi via QR Scan (${displayTime})`
-        }).where(eq(attendanceRecords.id, rec.id));
+        });
 
       } else {
-        await db.insert(attendanceRecords).values({
+        await safeInsertRecord({
           id: uuidv4(),
           sessionId,
           userId: currentUser.id,
@@ -1232,11 +1534,11 @@ async function startServer() {
 
   app.get("/api/attendance/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const session = await db.select().from(attendanceSessions).where(eq(attendanceSessions.id, req.params.id));
+      const session = await safeSelectSessionById(req.params.id);
       if (session.length === 0) {
         return res.status(404).json({ error: "Sesi absensi tidak ditemukan." });
       }
-      const records = await db.select().from(attendanceRecords).where(eq(attendanceRecords.sessionId, req.params.id));
+      const records = await safeSelectRecordsBySessionId(req.params.id);
       res.json({
         session: session[0],
         records
@@ -1252,7 +1554,7 @@ async function startServer() {
       const { id, title, date, notes, isPermanent, records } = req.body;
       const sessionId = id || uuidv4();
       
-      await db.insert(attendanceSessions).values({
+      await safeInsertSession({
         id: sessionId,
         title,
         date,
@@ -1262,15 +1564,16 @@ async function startServer() {
       });
 
       if (Array.isArray(records) && records.length > 0) {
-        const formattedRecords = records.map(r => ({
-          id: r.id || uuidv4(),
-          sessionId: sessionId,
-          userId: r.userId || null,
-          name: r.name,
-          status: r.status || 'Hadir',
-          notes: r.notes || null
-        }));
-        await db.insert(attendanceRecords).values(formattedRecords);
+        for (const r of records) {
+          await safeInsertRecord({
+            id: r.id || uuidv4(),
+            sessionId: sessionId,
+            userId: r.userId || null,
+            name: r.name,
+            status: r.status || 'Hadir',
+            notes: r.notes || null
+          });
+        }
       }
 
       await logActivity(req.user!.id, "Membuat absensi", `Sesi absensi baru: ${title}`);
@@ -1284,7 +1587,7 @@ async function startServer() {
   app.put("/api/attendance/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const sessionId = req.params.id;
-      const existingSession = await db.select().from(attendanceSessions).where(eq(attendanceSessions.id, sessionId));
+      const existingSession = await safeSelectSessionById(sessionId);
       
       if (existingSession.length === 0) {
         return res.status(404).json({ error: "Sesi absensi tidak ditemukan." });
@@ -1299,6 +1602,7 @@ async function startServer() {
 
       const { title, date, notes, isPermanent, records } = req.body;
 
+      await checkAttendanceColumns();
       await db.update(attendanceSessions).set({
         title,
         date,
@@ -1309,15 +1613,16 @@ async function startServer() {
       await db.delete(attendanceRecords).where(eq(attendanceRecords.sessionId, sessionId));
 
       if (Array.isArray(records) && records.length > 0) {
-        const formattedRecords = records.map(r => ({
-          id: r.id || uuidv4(),
-          sessionId: sessionId,
-          userId: r.userId || null,
-          name: r.name,
-          status: r.status || 'Hadir',
-          notes: r.notes || null
-        }));
-        await db.insert(attendanceRecords).values(formattedRecords);
+        for (const r of records) {
+          await safeInsertRecord({
+            id: r.id || uuidv4(),
+            sessionId: sessionId,
+            userId: r.userId || null,
+            name: r.name,
+            status: r.status || 'Hadir',
+            notes: r.notes || null
+          });
+        }
       }
 
       await logActivity(req.user!.id, "Mengubah absensi", `Mengubah sesi absensi: ${title}`);
@@ -1331,7 +1636,7 @@ async function startServer() {
   app.delete("/api/attendance/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
       const sessionId = req.params.id;
-      const existingSession = await db.select().from(attendanceSessions).where(eq(attendanceSessions.id, sessionId));
+      const existingSession = await safeSelectSessionById(sessionId);
       
       if (existingSession.length === 0) {
         return res.status(404).json({ error: "Sesi absensi tidak ditemukan." });

@@ -26,8 +26,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             headers: { Authorization: `Bearer ${token}` }
           });
           if (res.ok) {
-            const data = await res.json();
-            setUser(data.user);
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const data = await res.json();
+              setUser(data.user);
+            } else {
+              localStorage.removeItem('kkn_token');
+            }
           } else {
             localStorage.removeItem('kkn_token');
           }
@@ -46,7 +51,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone, password })
     });
-    const data = await res.json();
+    const contentType = res.headers.get('content-type');
+    let data: any = {};
+    if (contentType && contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      throw new Error('Gagal menghubungi server (respon tidak valid).');
+    }
     if (!res.ok) throw new Error(data.error || 'Login failed');
     localStorage.setItem('kkn_token', data.token);
     setUser(data.user);
@@ -58,7 +69,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nim, name, phone, email, password, role })
     });
-    const data = await res.json();
+    const contentType = res.headers.get('content-type');
+    let data: any = {};
+    if (contentType && contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      throw new Error('Gagal menghubungi server (respon tidak valid).');
+    }
     if (!res.ok) throw new Error(data.error || 'Registration failed');
     localStorage.setItem('kkn_token', data.token);
     setUser(data.user);

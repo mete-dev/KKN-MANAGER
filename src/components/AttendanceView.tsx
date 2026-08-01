@@ -44,12 +44,14 @@ interface AttendanceSession {
 interface DailyReportRow {
   no: number;
   id: string;
+  recordId?: string | null;
   name: string;
   nim: string;
   divisi: string;
   checkInTime: string;
   checkOutTime: string;
   status: string;
+  notes?: string;
 }
 
 interface Props {
@@ -60,7 +62,12 @@ interface Props {
 export default function AttendanceView({ getToken, participants }: Props) {
   const { user } = useAuth();
   const isSuperAdmin = user?.nim === '223125416';
-  const isSekretarisOrLeader = user?.role === 'Sekretaris' || user?.role === 'Ketua' || isSuperAdmin;
+  const roleNorm = (user?.role || '').toLowerCase();
+  const isSekretarisOrLeader = 
+    roleNorm.includes('sekretaris') || 
+    roleNorm.includes('kesekretariatan') || 
+    roleNorm.includes('ketua') || 
+    isSuperAdmin;
 
   // Active Sub Tab: 'kegiatan' | 'harian'
   const [activeSubTab, setActiveSubTab] = useState<'kegiatan' | 'harian'>('kegiatan');
@@ -114,6 +121,62 @@ export default function AttendanceView({ getToken, participants }: Props) {
   const [dailyReportData, setDailyReportData] = useState<DailyReportRow[]>([]);
   const [dailyReportLoading, setDailyReportLoading] = useState<boolean>(false);
 
+  // --- EDIT DAILY ATTENDANCE STATES ---
+  const [editingDailyRow, setEditingDailyRow] = useState<DailyReportRow | null>(null);
+  const [editDailyStatus, setEditDailyStatus] = useState<string>('Hadir');
+  const [editDailyCheckIn, setEditDailyCheckIn] = useState<string>('-');
+  const [editDailyCheckOut, setEditDailyCheckOut] = useState<string>('-');
+  const [editDailyNotes, setEditDailyNotes] = useState<string>('');
+  const [editDailySubmitting, setEditDailySubmitting] = useState<boolean>(false);
+  const [editDailyError, setEditDailyError] = useState<string | null>(null);
+
+  const handleOpenEditDailyModal = (row: DailyReportRow) => {
+    setEditingDailyRow(row);
+    setEditDailyStatus(row.status || 'Belum Absen');
+    setEditDailyCheckIn(row.checkInTime || '-');
+    setEditDailyCheckOut(row.checkOutTime || '-');
+    setEditDailyNotes(row.notes || '');
+    setEditDailyError(null);
+  };
+
+  const handleSaveDailyEdit = async () => {
+    if (!editingDailyRow) return;
+    setEditDailySubmitting(true);
+    setEditDailyError(null);
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/attendance/daily-report', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          date: dailyReportDate,
+          userId: editingDailyRow.id,
+          status: editDailyStatus,
+          checkInTime: editDailyCheckIn,
+          checkOutTime: editDailyCheckOut,
+          notes: editDailyNotes
+        })
+      });
+      let data: any = {};
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      }
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menyimpan perubahan absensi harian.');
+      }
+      setEditingDailyRow(null);
+      await fetchDailyReport();
+    } catch (err: any) {
+      setEditDailyError(err.message || 'Terjadi kesalahan');
+    } finally {
+      setEditDailySubmitting(false);
+    }
+  };
+
   // Current WIB Time helper
   const getWibStatus = () => {
     const now = new Date();
@@ -143,8 +206,12 @@ export default function AttendanceView({ getToken, participants }: Props) {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Gagal memuat data absensi');
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Respon server tidak valid');
+      }
       const data = await res.json();
-      const sorted = data.sort((a: any, b: any) => {
+      const sorted = (Array.isArray(data) ? data : []).sort((a: any, b: any) => {
         const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
         if (dateDiff !== 0) return dateDiff;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -163,12 +230,15 @@ export default function AttendanceView({ getToken, participants }: Props) {
     setDailyReportLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch(`/api/attendance/daily-report?date=${dateToFetch}`, {
+      const res = await fetch(`/api/attendance/daily-report?date=${encodeURIComponent(dateToFetch)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        const data = await res.json();
-        setDailyReportData(data.report || []);
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          setDailyReportData(data.report || []);
+        }
       }
     } catch (e) {
       console.warn("Failed fetching daily report:", e);
@@ -262,12 +332,19 @@ export default function AttendanceView({ getToken, participants }: Props) {
       }
 
       const token = await getToken();
-      const res = await fetch(`/api/attendance/${targetSessionId}/scan`, {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(targetSessionId)}/scan`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type');
+      let data: any = {};
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        throw new Error(res.status === 404 ? 'Kode QR / Sesi Absensi tidak ditemukan.' : 'Gagal memproses QR Code (Respon tidak valid).');
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Gagal mencatat presensi.');
       }
@@ -295,12 +372,15 @@ export default function AttendanceView({ getToken, participants }: Props) {
     try {
       setQrModalLoading(true);
       const token = await getToken();
-      const res = await fetch(`/api/attendance/${sessionId}`, {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(sessionId)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        const data = await res.json();
-        setQrModalRecords(data.records || []);
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          setQrModalRecords(data.records || []);
+        }
       }
     } catch (e) {
       console.warn(e);
@@ -347,10 +427,14 @@ export default function AttendanceView({ getToken, participants }: Props) {
     try {
       setLoading(true);
       const token = await getToken();
-      const res = await fetch(`/api/attendance/${session.id}`, {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(session.id)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Gagal memuat detail sesi absensi');
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Respon server tidak valid');
+      }
       const data = await res.json();
 
       setSelectedSession(data.session);
@@ -434,7 +518,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
         records: formRecords
       };
 
-      const url = view === 'create' ? '/api/attendance' : `/api/attendance/${selectedSession?.id}`;
+      const url = view === 'create' ? '/api/attendance' : `/api/attendance/${encodeURIComponent(selectedSession?.id || '')}`;
       const method = view === 'create' ? 'POST' : 'PUT';
 
       const res = await fetch(url, {
@@ -446,7 +530,11 @@ export default function AttendanceView({ getToken, participants }: Props) {
         body: JSON.stringify(payload)
       });
 
-      const result = await res.json();
+      let result: any = {};
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        result = await res.json();
+      }
       if (!res.ok) throw new Error(result.error || 'Gagal menyimpan data absensi');
 
       await fetchSessions();
@@ -471,13 +559,17 @@ export default function AttendanceView({ getToken, participants }: Props) {
     setLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch(`/api/attendance/${id}`, {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Gagal menghapus absensi');
+        let errData: any = {};
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          errData = await res.json();
+        }
+        throw new Error(errData.error || 'Gagal menghapus absensi');
       }
       await fetchSessions();
     } catch (err: any) {
@@ -504,8 +596,10 @@ export default function AttendanceView({ getToken, participants }: Props) {
       'Nama': row.name,
       'NIM': row.nim || '-',
       'Divisi': row.divisi || 'Anggota',
+      'Status': row.status || 'Belum Absen',
       'Cek In (Jam)': row.checkInTime || '-',
-      'Cek Out (Jam)': row.checkOutTime || '-'
+      'Cek Out (Jam)': row.checkOutTime || '-',
+      'Catatan': row.notes || '-'
     }));
 
     const ws = XLSX.utils.json_to_sheet([]);
@@ -871,50 +965,80 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       </div>
                     </div>
 
-                    {/* Action buttons including PROMINENT GENERATE TOKEN BUTTON */}
+                    {/* Action buttons tailored by role */}
                     <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
-                      <button
-                        onClick={() => setQrModalSession(session)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-100"
-                        title="Buat & Tampilkan Token QR Absensi Kegiatan"
-                      >
-                        <QrCode className="w-4 h-4 text-white" />
-                        <span>Buat Token QR</span>
-                      </button>
+                      {isSekretarisOrLeader ? (
+                        <>
+                          <button
+                            onClick={() => setQrModalSession(session)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-100"
+                            title="Buat & Tampilkan Token QR Absensi Kegiatan"
+                          >
+                            <QrCode className="w-4 h-4 text-white" />
+                            <span>Buat Token QR</span>
+                          </button>
 
-                      <div className="flex items-center gap-1.5 ml-auto">
-                        <button
-                          onClick={() => loadSession(session, 'detail')}
-                          className="text-xs font-semibold text-gray-700 hover:text-emerald-700 bg-gray-50 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-all border border-gray-100 flex items-center gap-1"
-                        >
-                          Rekap
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            <button
+                              onClick={() => loadSession(session, 'detail')}
+                              className="text-xs font-semibold text-gray-700 hover:text-emerald-700 bg-gray-50 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-all border border-gray-100 flex items-center gap-1"
+                            >
+                              Rekap
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
 
-                        <button
-                          onClick={() => loadSession(session, 'edit')}
-                          className={`text-xs font-semibold p-1.5 rounded-lg transition-all flex items-center gap-1 ${
-                            canEditThis 
-                              ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-100'
-                              : 'text-gray-300 bg-gray-50 cursor-not-allowed'
-                          }`}
-                          title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
+                            <button
+                              onClick={() => loadSession(session, 'edit')}
+                              className={`text-xs font-semibold p-1.5 rounded-lg transition-all flex items-center gap-1 ${
+                                canEditThis 
+                                  ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-100'
+                                  : 'text-gray-300 bg-gray-50 cursor-not-allowed'
+                              }`}
+                              title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
 
-                        <button
-                          onClick={() => handleDeleteSession(session.id, isLocked)}
-                          className={`p-1.5 rounded-lg transition-all ${
-                            canEditThis 
-                              ? 'text-red-600 bg-red-50 hover:bg-red-100'
-                              : 'text-gray-300 bg-gray-50 cursor-not-allowed'
-                          }`}
-                          title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                            <button
+                              onClick={() => handleDeleteSession(session.id, isLocked)}
+                              className={`p-1.5 rounded-lg transition-all ${
+                                canEditThis 
+                                  ? 'text-red-600 bg-red-50 hover:bg-red-100'
+                                  : 'text-gray-300 bg-gray-50 cursor-not-allowed'
+                              }`}
+                              title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              setIsScannerOpen(true);
+                              setScanSuccessResult(null);
+                              setScanError(null);
+                              setManualCode(session.id);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-100"
+                            title="Scan QR atau Presensi untuk Sesi Ini"
+                          >
+                            <ScanLine className="w-4 h-4 text-white" />
+                            <span>Scan QR Presensi</span>
+                          </button>
+
+                          <button
+                            onClick={() => loadSession(session, 'detail')}
+                            className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-xs font-semibold px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 border border-gray-200/70 ml-auto"
+                            title="Lihat List Kehadiran Sesi Ini"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>List Kehadiran</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -956,13 +1080,28 @@ export default function AttendanceView({ getToken, participants }: Props) {
               </p>
 
               <div className="pt-2 flex items-center justify-between gap-3">
-                <button
-                  onClick={() => setDailyQrModalType('checkin')}
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Tampilkan QR Check-In</span>
-                </button>
+                {isSekretarisOrLeader ? (
+                  <button
+                    onClick={() => setDailyQrModalType('checkin')}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Tampilkan QR Check-In</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsScannerOpen(true);
+                      setScanSuccessResult(null);
+                      setScanError(null);
+                      setManualCode('CHECKIN');
+                    }}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                  >
+                    <ScanLine className="w-4 h-4" />
+                    <span>📷 Scan QR Check-In Saya</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -993,13 +1132,28 @@ export default function AttendanceView({ getToken, participants }: Props) {
               </p>
 
               <div className="pt-2 flex items-center justify-between gap-3">
-                <button
-                  onClick={() => setDailyQrModalType('checkout')}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2"
-                >
-                  <QrCode className="w-4 h-4" />
-                  <span>Tampilkan QR Check-Out</span>
-                </button>
+                {isSekretarisOrLeader ? (
+                  <button
+                    onClick={() => setDailyQrModalType('checkout')}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Tampilkan QR Check-Out</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsScannerOpen(true);
+                      setScanSuccessResult(null);
+                      setScanError(null);
+                      setManualCode('CHECKOUT');
+                    }}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2"
+                  >
+                    <ScanLine className="w-4 h-4" />
+                    <span>📷 Scan QR Check-Out Saya</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1049,89 +1203,126 @@ export default function AttendanceView({ getToken, participants }: Props) {
             </div>
 
             {/* DAILY STATS SUMMARY */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100 text-center">
                 <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Total Anggota</span>
                 <span className="text-lg font-black text-gray-900">{dailyReportData.length} Orang</span>
               </div>
               <div className="bg-emerald-50/70 p-3 rounded-2xl border border-emerald-100 text-center">
-                <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">Sudah Check-In</span>
+                <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">Hadir</span>
                 <span className="text-lg font-black text-emerald-700">
-                  {dailyReportData.filter(r => r.checkInTime !== '-').length} Orang
+                  {dailyReportData.filter(r => r.status === 'Hadir' || (r.status !== 'Izin' && r.status !== 'Sakit' && r.status !== 'Alpa' && r.checkInTime !== '-')).length} Orang
                 </span>
               </div>
-              <div className="bg-blue-50/70 p-3 rounded-2xl border border-blue-100 text-center">
+              <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-100 text-center">
+                <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Izin / Sakit</span>
+                <span className="text-lg font-black text-amber-700">
+                  {dailyReportData.filter(r => r.status === 'Izin' || r.status === 'Sakit').length} Orang
+                </span>
+              </div>
+              <div className="bg-rose-50/70 p-3 rounded-2xl border border-rose-100 text-center">
+                <span className="text-[10px] text-rose-800 font-bold uppercase tracking-wider block">Alpa / Belum Absen</span>
+                <span className="text-lg font-black text-rose-700">
+                  {dailyReportData.filter(r => r.status === 'Alpa' || r.status === 'Belum Absen').length} Orang
+                </span>
+              </div>
+              <div className="bg-blue-50/70 p-3 rounded-2xl border border-blue-100 text-center col-span-2 sm:col-span-1">
                 <span className="text-[10px] text-blue-800 font-bold uppercase tracking-wider block">Sudah Check-Out</span>
                 <span className="text-lg font-black text-blue-700">
                   {dailyReportData.filter(r => r.checkOutTime !== '-').length} Orang
                 </span>
               </div>
-              <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-100 text-center">
-                <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Belum Check-In</span>
-                <span className="text-lg font-black text-amber-700">
-                  {dailyReportData.filter(r => r.checkInTime === '-').length} Orang
-                </span>
-              </div>
             </div>
 
-            {/* TABLE LAPORAN 5 KOLOM */}
+            {/* TABLE LAPORAN HARIAN */}
             <div className="overflow-x-auto rounded-2xl border border-gray-100">
               <table className="w-full text-left text-sm border-collapse bg-white">
                 <thead>
                   <tr className="bg-gray-900 text-white text-xs font-bold uppercase tracking-wider">
-                    <th className="p-3.5 text-center w-14">Nomor</th>
+                    <th className="p-3.5 text-center w-12">No</th>
                     <th className="p-3.5">Nama</th>
                     <th className="p-3.5">NIM</th>
                     <th className="p-3.5">Divisi</th>
+                    <th className="p-3.5 text-center">Status</th>
                     <th className="p-3.5 text-center">Cek In (jam)</th>
                     <th className="p-3.5 text-center">Cek Out (jam)</th>
+                    <th className="p-3.5">Catatan</th>
+                    {isSekretarisOrLeader && <th className="p-3.5 text-center">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-medium">
                   {dailyReportLoading ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-gray-400">
+                      <td colSpan={isSekretarisOrLeader ? 9 : 8} className="p-8 text-center text-gray-400">
                         <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600 mb-2" />
                         Memuat data laporan harian...
                       </td>
                     </tr>
                   ) : dailyReportData.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-gray-400">
+                      <td colSpan={isSekretarisOrLeader ? 9 : 8} className="p-8 text-center text-gray-400">
                         Tidak ada data anggota untuk tanggal {dailyReportDate}.
                       </td>
                     </tr>
                   ) : (
-                    dailyReportData.map((row, idx) => (
-                      <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
-                        <td className="p-3.5 text-center font-bold text-gray-500 text-xs">{idx + 1}</td>
-                        <td className="p-3.5 font-bold text-gray-900">{row.name}</td>
-                        <td className="p-3.5 text-gray-600 font-mono text-xs">{row.nim || '-'}</td>
-                        <td className="p-3.5">
-                          <span className="bg-gray-100 text-gray-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-gray-200/60">
-                            {row.divisi}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-center">
-                          {row.checkInTime !== '-' ? (
-                            <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center justify-center gap-1 w-fit mx-auto">
-                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> {row.checkInTime}
+                    dailyReportData.map((row, idx) => {
+                      let statusBadgeClass = 'bg-gray-100 text-gray-600 border-gray-200';
+                      if (row.status === 'Hadir') statusBadgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                      else if (row.status === 'Izin') statusBadgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+                      else if (row.status === 'Sakit') statusBadgeClass = 'bg-purple-50 text-purple-800 border-purple-200';
+                      else if (row.status === 'Alpa') statusBadgeClass = 'bg-rose-50 text-rose-800 border-rose-200';
+
+                      return (
+                        <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
+                          <td className="p-3.5 text-center font-bold text-gray-500 text-xs">{idx + 1}</td>
+                          <td className="p-3.5 font-bold text-gray-900">{row.name}</td>
+                          <td className="p-3.5 text-gray-600 font-mono text-xs">{row.nim || '-'}</td>
+                          <td className="p-3.5">
+                            <span className="bg-gray-100 text-gray-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-gray-200/60">
+                              {row.divisi}
                             </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 font-medium">-</span>
-                          )}
-                        </td>
-                        <td className="p-3.5 text-center">
-                          {row.checkOutTime !== '-' ? (
-                            <span className="text-xs font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 flex items-center justify-center gap-1 w-fit mx-auto">
-                              <CheckCircle className="w-3.5 h-3.5 text-blue-600" /> {row.checkOutTime}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border inline-block ${statusBadgeClass}`}>
+                              {row.status || 'Belum Absen'}
                             </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 font-medium">-</span>
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {row.checkInTime !== '-' ? (
+                              <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center justify-center gap-1 w-fit mx-auto">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> {row.checkInTime}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400 font-medium">-</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-center">
+                            {row.checkOutTime !== '-' ? (
+                              <span className="text-xs font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 flex items-center justify-center gap-1 w-fit mx-auto">
+                                <CheckCircle className="w-3.5 h-3.5 text-blue-600" /> {row.checkOutTime}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400 font-medium">-</span>
+                            )}
+                          </td>
+                          <td className="p-3.5 text-xs text-gray-600 max-w-xs truncate" title={row.notes || '-'}>
+                            {row.notes || '-'}
+                          </td>
+                          {isSekretarisOrLeader && (
+                            <td className="p-3.5 text-center">
+                              <button
+                                onClick={() => handleOpenEditDailyModal(row)}
+                                className="text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 mx-auto shadow-2xs"
+                                title="Edit Status Absensi, Jam & Catatan Harian"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                                <span>Edit</span>
+                              </button>
+                            </td>
                           )}
-                        </td>
-                      </tr>
-                    ))
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1411,12 +1602,26 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 Kembali
               </button>
 
-              <button
-                onClick={() => setQrModalSession(selectedSession)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-600 transition-all flex items-center gap-1.5 shadow-xs"
-              >
-                <QrCode className="w-3.5 h-3.5 text-white" /> Buat Token QR Kegiatan
-              </button>
+              {isSekretarisOrLeader ? (
+                <button
+                  onClick={() => setQrModalSession(selectedSession)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-600 transition-all flex items-center gap-1.5 shadow-xs"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-white" /> Buat Token QR Kegiatan
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsScannerOpen(true);
+                    setScanSuccessResult(null);
+                    setScanError(null);
+                    setManualCode(selectedSession.id);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg border border-emerald-600 transition-all flex items-center gap-1.5 shadow-xs"
+                >
+                  <ScanLine className="w-3.5 h-3.5 text-white" /> Scan QR Presensi Sesi Ini
+                </button>
+              )}
             </div>
             
             <div className="flex items-center gap-2">
@@ -1885,6 +2090,107 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 Tutup Tampilan QR
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL 4: EDIT DAILY ATTENDANCE MODAL (Sekretaris & Kesekretariatan) --- */}
+      {editingDailyRow && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 bg-gradient-to-r from-amber-600 to-amber-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center border border-white/30">
+                  <Edit3 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base leading-tight">Edit Absensi Harian</h3>
+                  <p className="text-[11px] text-amber-100">{editingDailyRow.name} ({editingDailyRow.nim})</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingDailyRow(null)}
+                className="p-1.5 hover:bg-white/10 rounded-full transition-colors text-amber-100 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleSaveDailyEdit(); }} className="p-6 space-y-4">
+              {editDailyError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{editDailyError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Status Absensi Harian</label>
+                <select
+                  value={editDailyStatus}
+                  onChange={e => setEditDailyStatus(e.target.value)}
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-amber-500/20"
+                >
+                  <option value="Hadir">Hadir</option>
+                  <option value="Izin">Izin</option>
+                  <option value="Sakit">Sakit</option>
+                  <option value="Alpa">Alpa</option>
+                  <option value="Belum Absen">Belum Absen</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Jam Check-In</label>
+                  <input
+                    type="text"
+                    value={editDailyCheckIn}
+                    onChange={e => setEditDailyCheckIn(e.target.value)}
+                    placeholder="Contoh: 07:45 atau -"
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Jam Check-Out</label>
+                  <input
+                    type="text"
+                    value={editDailyCheckOut}
+                    onChange={e => setEditDailyCheckOut(e.target.value)}
+                    placeholder="Contoh: 17:30 atau -"
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Catatan / Alasan Izin / Sakit</label>
+                <textarea
+                  rows={3}
+                  value={editDailyNotes}
+                  onChange={e => setEditDailyNotes(e.target.value)}
+                  placeholder="Keterangan izin, surat dokter, sakit, dinas luar, dll."
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingDailyRow(null)}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={editDailySubmitting}
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-2"
+                >
+                  {editDailySubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Simpan Perubahan
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
