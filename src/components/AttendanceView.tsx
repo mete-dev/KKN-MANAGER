@@ -882,8 +882,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 </button>
               )}
             </div>
-          ) : (
-            <div className="flex flex-col gap-4 max-w-3xl mx-auto w-full">
+            <div className="flex flex-col gap-4 max-w-5xl mx-auto w-full">
               {filteredSessions.map((session) => {
                 const isLocked = session.isPermanent === 1;
                 const canEditThis = !isLocked || isSuperAdmin;
@@ -894,69 +893,69 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 return (
                   <div 
                     key={session.id} 
-                    className="bg-white rounded-2xl border border-gray-100 shadow-xs hover:shadow-sm transition-all p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                    className="bg-white rounded-2xl border border-gray-100 shadow-xs hover:shadow-sm transition-all p-4 flex flex-col md:flex-row md:items-center justify-between gap-4"
                   >
-                    {/* LEFT: Title & Date & Status Badge */}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center flex-wrap gap-2">
+                    {/* LEFT SECTION: Title, Date, Badges & Notes */}
+                    <div className="flex-1 min-w-[200px] space-y-1.5">
+                      <div className="flex items-center gap-2.5 flex-wrap">
                         {isLocked ? (
-                          <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0">
+                          <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
                             <Lock className="w-2.5 h-2.5" /> Permanen
                           </span>
                         ) : (
-                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0">
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
                             <Unlock className="w-2.5 h-2.5" /> Draf
                           </span>
                         )}
-                        <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate" title={session.title}>
+                        <h3 className="font-bold text-gray-900 text-base leading-snug break-words">
                           {session.title}
                         </h3>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>{new Date(session.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{new Date(session.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
                         </div>
                         {session.notes && (
-                          <span className="text-gray-500 line-clamp-1 max-w-[220px] italic border-l border-gray-200 pl-3 hidden sm:inline" title={session.notes}>
+                          <span className="text-gray-400 truncate max-w-[150px] sm:max-w-[250px] italic border-l border-gray-250 pl-2.5" title={session.notes}>
                             "{session.notes}"
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* MIDDLE: Stats Row */}
-                    <div className="flex flex-wrap items-center gap-1.5 bg-gray-50/50 p-1.5 rounded-xl border border-gray-100/50 self-start lg:self-auto shrink-0">
-                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    {/* MIDDLE SECTION: Attendance Counters */}
+                    <div className="flex flex-wrap items-center gap-1.5 bg-gray-50/50 p-1.5 rounded-xl border border-gray-100 shrink-0">
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
                         <span className="text-gray-500 font-semibold">Hadir:</span>
-                        <span className="font-bold text-emerald-750">{hadirCount}</span>
+                        <span className="font-bold text-gray-900">{hadirCount}</span>
                       </div>
-                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 shrink-0"></span>
                         <span className="text-gray-500 font-semibold">Belum:</span>
-                        <span className="font-bold text-gray-700">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</span>
+                        <span className="font-bold text-gray-900">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</span>
                       </div>
-                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
                         <span className="text-gray-500 font-semibold">Sakit:</span>
-                        <span className="font-bold text-blue-700">{session.counts?.sakit || 0}</span>
+                        <span className="font-bold text-gray-900">{session.counts?.sakit || 0}</span>
                       </div>
-                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
                         <span className="text-gray-500 font-semibold">Izin:</span>
-                        <span className="font-bold text-amber-700">{session.counts?.izin || 0}</span>
+                        <span className="font-bold text-gray-900">{session.counts?.izin || 0}</span>
                       </div>
-                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-150/40 shadow-3xs text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
                         <span className="text-gray-500 font-semibold">Alfa:</span>
-                        <span className="font-bold text-red-700">{session.counts?.alfa || 0}</span>
+                        <span className="font-bold text-gray-900">{session.counts?.alfa || 0}</span>
                       </div>
                     </div>
 
-                    {/* RIGHT: Actions */}
-                    <div className="flex items-center gap-1.5 self-end lg:self-auto shrink-0 border-t lg:border-t-0 pt-2 lg:pt-0 border-gray-100 w-full lg:w-auto justify-end">
+                    {/* RIGHT SECTION: Action Buttons */}
+                    <div className="flex items-center gap-2 self-end md:self-auto shrink-0 border-t md:border-t-0 pt-2.5 md:pt-0 border-gray-100 w-full md:w-auto justify-end">
                       {isSekretarisOrLeader ? (
                         <>
                           <button
@@ -970,36 +969,36 @@ export default function AttendanceView({ getToken, participants }: Props) {
 
                           <button
                             onClick={() => loadSession(session, 'detail')}
-                            className="text-xs font-bold text-gray-700 hover:text-emerald-700 bg-gray-50 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-all border border-gray-100 flex items-center gap-0.5"
+                            className="text-xs font-bold text-gray-700 hover:text-emerald-850 bg-gray-50 hover:bg-emerald-50 px-3.5 py-1.5 rounded-lg transition-all border border-gray-150 flex items-center gap-0.5"
                           >
                             <span>Rekap</span>
-                            <ChevronRight className="w-3 h-3" />
+                            <ChevronRight className="w-3 h-3 text-gray-400" />
                           </button>
 
                           <button
                             disabled={!canEditThis}
                             onClick={() => loadSession(session, 'edit')}
-                            className={`p-1.5 rounded-lg border transition-all ${
+                            className={`p-2 rounded-lg border transition-all ${
                               canEditThis 
                                 ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-100'
                                 : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
                             }`}
                             title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
+                            <Edit3 className="w-4 h-4" />
                           </button>
 
                           <button
                             disabled={!canEditThis}
                             onClick={() => handleDeleteSession(session.id, isLocked)}
-                            className={`p-1.5 rounded-lg border transition-all ${
+                            className={`p-2 rounded-lg border transition-all ${
                               canEditThis 
                                 ? 'text-red-600 bg-red-50 hover:bg-red-100 border-red-100'
                                 : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
                             }`}
                             title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </>
                       ) : (
@@ -1023,8 +1022,8 @@ export default function AttendanceView({ getToken, participants }: Props) {
                             className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 border border-gray-200/70"
                           >
                             <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>List</span>
-                            <ChevronRight className="w-3 h-3" />
+                            <span>List Kehadiran</span>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-450" />
                           </button>
                         </>
                       )}
