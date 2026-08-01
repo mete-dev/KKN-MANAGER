@@ -64532,13 +64532,14 @@ app.post("/api/auth/login", async (req, res) => {
       await logActivity(user.id, "Auto-Register Login", `Pengguna baru otomatis terdaftar saat login dengan nomor ${inputClean}`);
     } else {
       let validPassword = await bcryptjs_default.compare(password, user.password);
-      if (!validPassword && (password === "123456" || user.password === password || user.password === "123456")) {
+      const last6 = user.phone ? String(user.phone).slice(-6) : "";
+      if (!validPassword && (password === "123456" || last6 && password === last6 || user.password === password || user.password === "123456" || last6 && user.password === last6)) {
         validPassword = true;
         const updatedHash = await bcryptjs_default.hash(password, 10);
         await repositoryUpdateUser(user.id, { password: updatedHash });
       }
       if (!validPassword) {
-        return res.status(401).json({ error: "Password salah. Silakan coba lagi atau gunakan password default 123456." });
+        return res.status(401).json({ error: "Password salah. Silakan coba lagi dengan password Anda, 6 digit terakhir nomor HP, atau password default 123456." });
       }
     }
     await logActivity(user.id, "Login", "Berhasil masuk ke aplikasi");

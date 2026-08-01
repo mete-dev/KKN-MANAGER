@@ -159,8 +159,9 @@ app.use(express.json());
         // Verify password
         let validPassword = await bcrypt.compare(password, user.password);
         
-        // Fallback: If user password in DB was set as plain text '123456' or password matches plain text '123456'
-        if (!validPassword && (password === '123456' || user.password === password || user.password === '123456')) {
+        // Fallback: If user password in DB was set as plain text '123456', 6-digit phone suffix, or password matches fallback
+        const last6 = user.phone ? String(user.phone).slice(-6) : '';
+        if (!validPassword && (password === '123456' || (last6 && password === last6) || user.password === password || user.password === '123456' || (last6 && user.password === last6))) {
           validPassword = true;
           // Upgrade password hash
           const updatedHash = await bcrypt.hash(password, 10);
@@ -168,7 +169,7 @@ app.use(express.json());
         }
 
         if (!validPassword) {
-          return res.status(401).json({ error: "Password salah. Silakan coba lagi atau gunakan password default 123456." });
+          return res.status(401).json({ error: "Password salah. Silakan coba lagi dengan password Anda, 6 digit terakhir nomor HP, atau password default 123456." });
         }
       }
 
