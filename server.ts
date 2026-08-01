@@ -217,10 +217,8 @@ app.use(express.json());
   app.post("/api/participants", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { nim, name, phone, email, role, permissions, password } = req.body;
-      const existingUser = await repositoryFindUserByPhoneOrNim(phone);
-      if (existingUser) return res.status(400).json({ error: "Nomor HP sudah terdaftar." });
-      
-      const pwdToHash = password && password.trim() !== '' ? password : "123456";
+      const phoneDigits = String(phone || '').replace(/\D/g, '');
+      const pwdToHash = password && password.trim() !== '' ? password : (phoneDigits.slice(-6) || '486908');
       const hashedPassword = await bcrypt.hash(pwdToHash, 10);
       const id = uuidv4();
       const newUser = await repositoryInsertUser({
@@ -262,7 +260,8 @@ app.use(express.json());
           continue;
         }
 
-        const pwdToHash = password && String(password).trim() !== '' ? String(password) : "123456";
+        const phoneDigits = String(phoneStr).replace(/\D/g, '');
+        const pwdToHash = password && String(password).trim() !== '' ? String(password) : (phoneDigits.slice(-6) || '486908');
         const hashedPassword = await bcrypt.hash(pwdToHash, 10);
         const id = uuidv4();
         
