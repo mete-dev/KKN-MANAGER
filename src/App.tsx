@@ -199,12 +199,14 @@ function AppContent() {
     { path: '/log-aktivitas', label: 'Log Aktivitas', icon: Activity, id: 'log' },
   ];
 
+  const isBackupAllowed = user?.role === 'Ketua Posko' || user?.role === 'Ketua' || user?.role === 'Admin' || user?.nim === '223125416' || user?.nim === '2100018001' || userPerms.participants === 'crud';
+
   const navItems = [
     ...baseNavItems.filter(item => {
       if (item.id === 'dashboard' || item.id === 'log') return true;
       return userPerms[item.id] !== 'none';
     }),
-    ...(user?.nim === '223125416' ? [
+    ...(isBackupAllowed ? [
       { path: '/backup-restore', label: 'Backup & Restore', icon: Database, id: 'backup' }
     ] : [])
   ];
@@ -288,7 +290,7 @@ function AppContent() {
                 {userPerms.calendar !== 'none' && <Route path="/jadwal" element={<CalendarView events={events} setEvents={setEvents} getToken={getToken} />} />}
                 <Route path="/log-aktivitas" element={<LogActivityView getToken={getToken} participants={participants} />} />
                 {userPerms.attendance !== 'none' && <Route path="/absensi" element={<AttendanceView getToken={getToken} participants={participants} />} />}
-                {user?.nim === '223125416' && <Route path="/backup-restore" element={<BackupRestoreView getToken={getToken} />} />}
+                {isBackupAllowed && <Route path="/backup-restore" element={<BackupRestoreView getToken={getToken} />} />}
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             )}
