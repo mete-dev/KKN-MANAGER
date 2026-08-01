@@ -39,11 +39,9 @@ import {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kkn-secret-key-123';
 
-async function startServer() {
-  const app = express();
-  const PORT = process.env.PORT || 3025;
+const app = express();
 
-  app.use(express.json());
+app.use(express.json());
 
   // Helper to log activities
   async function logActivity(userId: string, action: string, details?: string) {
@@ -1196,13 +1194,14 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
+    }).then((vite) => {
+      app.use(vite.middlewares);
     });
-    app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -1210,9 +1209,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
+  if (!process.env.VERCEL) {
+    const PORT = process.env.PORT || 3025;
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 
-startServer();
+  export default app;
