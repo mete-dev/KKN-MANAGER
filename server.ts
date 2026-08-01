@@ -164,7 +164,7 @@ app.use(express.json());
       res.json({ user: { id: user.id, nim: user.nim, name: user.name, phone: user.phone, email: user.email, role: user.role, permissions: user.permissions }, token });
     } catch (e) {
       console.error("Login error:", e);
-      res.status(500).json({ error: "Gagal login. Terjadi kesalahan pada server." });
+      res.status(500).json({ error: `Gagal login. Detail: ${e.message || String(e)}` });
     }
   });
 
