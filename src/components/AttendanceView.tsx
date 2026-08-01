@@ -1554,8 +1554,39 @@ export default function AttendanceView({ getToken, participants }: Props) {
                               <span className="text-xs text-gray-400 font-medium">-</span>
                             )}
                           </td>
-                          <td className="p-3.5 text-xs text-gray-600 max-w-xs truncate" title={row.notes || '-'}>
-                            {row.notes || '-'}
+                          <td className="p-3.5 align-middle">
+                            {(() => {
+                              const hasNotes = !!row.notes && row.notes !== '-';
+                              const isCheckInScan = row.checkInTime !== '-';
+                              
+                              if (!hasNotes) {
+                                if (row.status === 'Hadir' && isCheckInScan) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 rounded-md">
+                                      ✓ Scan Mandiri
+                                    </span>
+                                  );
+                                }
+                                return <span className="text-gray-400 font-medium">-</span>;
+                              }
+
+                              const notesStr = row.notes;
+                              const isManualByAdmin = notesStr.toLowerCase().includes('sekretaris') || notesStr.toLowerCase().includes('oleh');
+                              
+                              if (isManualByAdmin) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100/60 px-2 py-0.5 rounded-md" title={notesStr}>
+                                    ✏️ {notesStr}
+                                  </span>
+                                );
+                              }
+                              
+                              return (
+                                <span className="text-xs text-gray-700 font-medium whitespace-pre-wrap leading-tight block max-w-[200px]" title={notesStr}>
+                                  {notesStr}
+                                </span>
+                              );
+                            })()}
                           </td>
                           {isSekretarisOrLeader && (
                             <td className="p-3.5 text-center">
@@ -2432,12 +2463,34 @@ export default function AttendanceView({ getToken, participants }: Props) {
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">Catatan / Alasan Izin / Sakit</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={editDailyNotes}
                   onChange={e => setEditDailyNotes(e.target.value)}
                   placeholder="Keterangan izin, surat dokter, sakit, dinas luar, dll."
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 resize-none mb-2"
                 />
+                
+                {/* Pilihan Catatan Cepat (Quick Notes) */}
+                <div className="space-y-1">
+                  <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Catatan Cepat:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      'Diabsenkan oleh Sekretaris',
+                      'Sakit (Ada Surat Dokter)',
+                      'Izin Kegiatan Kampus',
+                      'Terlambat (Izin Posko)'
+                    ].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setEditDailyNotes(opt)}
+                        className="text-[9px] font-bold bg-gray-50 hover:bg-amber-50 text-gray-650 hover:text-amber-800 border border-gray-200 hover:border-amber-200 px-2 py-0.5 rounded-md transition-all shadow-3xs"
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
