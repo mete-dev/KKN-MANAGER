@@ -938,10 +938,27 @@ app.use(express.json());
   app.post("/api/attendance/:id/scan", requireAuth, async (req: AuthRequest, res) => {
     try {
       const paramId = req.params.id;
+      const upperParamId = paramId.toUpperCase();
       
-      // Check if code corresponds to daily check-in or checkout
-      if (paramId.startsWith('DAILY_CHECKIN') || paramId === 'CHECKIN') {
+      const parseDailyQrDate = (str: string): string | null => {
+        const matchWithDash = str.match(/\d{4}-\d{2}-\d{2}/);
+        if (matchWithDash) return matchWithDash[0];
+        const match8Digits = str.match(/(\d{4})(\d{2})(\d{2})/);
+        if (match8Digits) return `${match8Digits[1]}-${match8Digits[2]}-${match8Digits[3]}`;
+        return null;
+      };
+
+      // Check if code corresponds to daily check-in
+      if (upperParamId.includes('CHECKIN')) {
         const { dateStr, timeStr, hour, minute } = getWibDateTime();
+        
+        const embeddedDate = parseDailyQrDate(paramId);
+        if (embeddedDate && embeddedDate !== dateStr) {
+          return res.status(400).json({
+            error: `Absensi Check-In Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini.`
+          });
+        }
+
         if (hour > 10 || (hour === 10 && minute > 0)) {
           return res.status(400).json({
             error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
@@ -972,8 +989,17 @@ app.use(express.json());
         return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
       }
 
-      if (paramId.startsWith('DAILY_CHECKOUT') || paramId === 'CHECKOUT') {
+      // Check if code corresponds to daily checkout
+      if (upperParamId.includes('CHECKOUT')) {
         const { dateStr, timeStr, hour, minute } = getWibDateTime();
+        
+        const embeddedDate = parseDailyQrDate(paramId);
+        if (embeddedDate && embeddedDate !== dateStr) {
+          return res.status(400).json({
+            error: `Absensi Check-Out Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini.`
+          });
+        }
+
         if (hour > 22 || (hour === 22 && minute > 0)) {
           return res.status(400).json({
             error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
@@ -1238,24 +1264,6 @@ app.use(express.json());
     }
   });
 
-  // Vite middleware for development (dynamic import to avoid crashing in production)
-  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    import("vite").then(({ createServer: createViteServer }) => {
-      createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      }).then((vite) => {
-        app.use(vite.middlewares);
-      });
-    });
-  } else if (!process.env.VERCEL) {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
   // Global JSON error handler middleware
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("Global Express Error:", err);
@@ -1264,11 +1272,34 @@ app.use(express.json());
     });
   });
 
-  if (!process.env.VERCEL) {
-    const PORT = Number(process.env.PORT) || 3025;
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
+  async function startServer() {
+    if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+      try {
+        const { createServer: createViteServer } = await import("vite");
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } catch (err) {
+        console.error("Vite dev server init error:", err);
+      }
+    } else if (!process.env.VERCEL) {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+
+    if (!process.env.VERCEL) {
+      const PORT = Number(process.env.PORT) || 3025;
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+      });
+    }
   }
+
+  startServer();
 
   export default app;
