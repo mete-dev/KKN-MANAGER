@@ -1132,18 +1132,16 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   );
                 })}
               </div>
-
               {/* DESKTOP VIEW: Table (Visible only on tablets & laptops >= 768px) */}
               <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-gray-50/75 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                        <th className="py-3 px-4 w-[110px]">Status</th>
                         <th className="py-3 px-4 min-w-[180px]">Nama Kegiatan</th>
                         <th className="py-3 px-4 w-[145px]">Tanggal</th>
                         <th className="py-3 px-4 w-[340px]">Kehadiran</th>
-                        <th className="py-3 px-4 text-right w-[240px]">Aksi</th>
+                        <th className="py-3 px-4 text-right w-[280px]">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-sm">
@@ -1156,20 +1154,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
 
                         return (
                           <tr key={session.id} className="hover:bg-gray-50/30 transition-colors">
-                            {/* 1. Status */}
-                            <td className="py-3 px-4 align-middle">
-                              {isLocked ? (
-                                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md inline-flex items-center gap-0.5 whitespace-nowrap">
-                                  <Lock className="w-2.5 h-2.5" /> Permanen
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md inline-flex items-center gap-0.5 whitespace-nowrap">
-                                  <Unlock className="w-2.5 h-2.5" /> Draf
-                                </span>
-                              )}
-                            </td>
-
-                            {/* 2. Nama Kegiatan */}
+                            {/* 1. Nama Kegiatan */}
                             <td className="py-3 px-4 align-middle">
                               <div className="space-y-0.5">
                                 <span className="font-bold text-gray-900 leading-snug break-words block">
@@ -1183,7 +1168,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                               </div>
                             </td>
 
-                            {/* 3. Tanggal */}
+                            {/* 2. Tanggal */}
                             <td className="py-3 px-4 align-middle text-gray-650 font-medium whitespace-nowrap">
                               <div className="flex items-center gap-1.5 text-xs text-gray-500">
                                 <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -1191,7 +1176,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                               </div>
                             </td>
 
-                            {/* 4. Kehadiran */}
+                            {/* 3. Kehadiran */}
                             <td className="py-3 px-4 align-middle">
                               <table className="w-full max-w-[280px] text-center text-[10px] border border-gray-150 rounded-lg overflow-hidden bg-white">
                                 <thead>
@@ -1215,9 +1200,19 @@ export default function AttendanceView({ getToken, participants }: Props) {
                               </table>
                             </td>
 
-                            {/* 5. Aksi */}
+                            {/* 4. Aksi */}
                             <td className="py-3 px-4 align-middle text-right">
                               <div className="flex items-center gap-2 justify-end">
+                                {isLocked ? (
+                                  <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 whitespace-nowrap" title="Terkunci Permanen">
+                                    <Lock className="w-2.5 h-2.5" /> Permanen
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 whitespace-nowrap" title="Draf Terbuka">
+                                    <Unlock className="w-2.5 h-2.5" /> Draf
+                                  </span>
+                                )}
+
                                 {isSekretarisOrLeader ? (
                                   <>
                                     <button
@@ -1272,7 +1267,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                                         setScanError(null);
                                         setManualCode(session.id);
                                       }}
-                                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
+                                      className="bg-emerald-650 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm whitespace-nowrap"
                                       title="Scan QR Presensi"
                                     >
                                       <ScanLine className="w-3 h-3" />
