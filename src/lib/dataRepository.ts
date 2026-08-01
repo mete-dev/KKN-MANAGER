@@ -1,7 +1,7 @@
-import { db } from '../db/index.ts';
-import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from '../db/schema.ts';
+import { db } from '../db/index';
+import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
-import { isSupabaseConfigured, getSupabase } from './supabase.ts';
+import { isSupabaseConfigured, getSupabase } from './supabase';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 

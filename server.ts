@@ -2,9 +2,9 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { requireAuth, AuthRequest } from "./src/middleware/auth.ts";
-import { db, pool } from "./src/db/index.ts";
-import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from "./src/db/schema.ts";
+import { requireAuth, AuthRequest } from "./src/middleware/auth";
+import { db, pool } from "./src/db/index";
+import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from "./src/db/schema";
 import { eq, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -1210,7 +1210,7 @@ app.use(express.json());
   }
 
   if (!process.env.VERCEL) {
-    const PORT = process.env.PORT || 3025;
+    const PORT = Number(process.env.PORT) || 3025;
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });

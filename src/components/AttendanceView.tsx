@@ -252,6 +252,16 @@ export default function AttendanceView({ getToken, participants }: Props) {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('scan') === 'true') {
+      setIsScannerOpen(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('scan');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
+  }, []);
+
+  useEffect(() => {
     if (activeSubTab === 'harian') {
       fetchDailyReport();
     }
