@@ -95,14 +95,14 @@ export default function AttendanceView({ getToken, participants }: Props) {
   const captureSelfieFromVideo = (videoEl: HTMLVideoElement): string | null => {
     try {
       const canvas = document.createElement('canvas');
-      const maxWidth = 600;
+      const maxWidth = 380;
       const scale = maxWidth / (videoEl.videoWidth || 600);
       canvas.width = maxWidth;
       canvas.height = (videoEl.videoHeight || 450) * scale;
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
       ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.7);
+      return canvas.toDataURL('image/jpeg', 0.5);
     } catch {
       return null;
     }
@@ -158,9 +158,19 @@ export default function AttendanceView({ getToken, participants }: Props) {
     sessionTitle?: string;
     name?: string;
     already?: boolean;
+    photo?: string | null;
+    location?: { lat: number; lng: number; acc: number } | null;
   } | null>(null);
   const [cameraPermissionError, setCameraPermissionError] = useState(false);
   const qrReaderRef = useRef<Html5Qrcode | null>(null);
+
+  // --- SELFIE & GPS STEP STATES ---
+  const [scanStep, setScanStep] = useState<'scan' | 'selfie'>('scan');
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [selfieStream, setSelfieStream] = useState<MediaStream | null>(null);
+  const [gpsLocation, setGpsLocation] = useState<{ lat: number; lng: number; acc: number } | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const selfieVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // --- QR DISPLAY MODAL STATE (For Sekretaris / Admin) ---
   const [qrModalSession, setQrModalSession] = useState<AttendanceSession | null>(null);
@@ -320,11 +330,14 @@ export default function AttendanceView({ getToken, participants }: Props) {
     }
   }, [activeSubTab, dailyReportDate]);
 
+  const isScanProcessingRef = useRef(false);
+
   // --- CAMERA SCANNER HOOK ---
   useEffect(() => {
     let html5QrcodeScanner: Html5Qrcode | null = null;
-    if (isScannerOpen && !scanSuccessResult) {
+    if (isScannerOpen && !scanSuccessResult && scanStep === 'scan') {
       setCameraPermissionError(false);
+      isScanProcessingRef.current = false;
       const timer = setTimeout(() => {
         const readerElem = document.getElementById('reader');
         if (readerElem) {
@@ -333,9 +346,11 @@ export default function AttendanceView({ getToken, participants }: Props) {
             qrReaderRef.current = html5QrcodeScanner;
             html5QrcodeScanner.start(
               { facingMode: 'environment' },
-              { fps: 10, qrbox: { width: 220, height: 220 } },
+              { fps: 20, qrbox: { width: 230, height: 230 } },
               (decodedText) => {
-                handleProcessScanCode(decodedText);
+                if (isScanProcessingRef.current) return;
+                isScanProcessingRef.current = true;
+                handleScanCode(decodedText);
               },
               () => {}
             ).catch(err => {
@@ -347,7 +362,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
             setCameraPermissionError(true);
           }
         }
-      }, 300);
+      }, 150);
 
       return () => {
         clearTimeout(timer);
@@ -358,20 +373,42 @@ export default function AttendanceView({ getToken, participants }: Props) {
         }
       };
     }
-  }, [isScannerOpen, scanSuccessResult]);
+  }, [isScannerOpen, scanSuccessResult, scanStep]);
 
-  // Handle Scan Code (From Camera or Manual Input)
-  const handleProcessScanCode = async (rawCode: string) => {
+  const stopSelfieCamera = () => {
+    if (selfieStream) {
+      selfieStream.getTracks().forEach(t => t.stop());
+      setSelfieStream(null);
+    }
+  };
+
+  const startSelfieCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      setSelfieStream(stream);
+      if (selfieVideoRef.current) {
+        selfieVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.warn('Kamera selfie tidak dapat dibuka:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (selfieStream && selfieVideoRef.current) {
+      selfieVideoRef.current.srcObject = selfieStream;
+    }
+  }, [selfieStream, scanStep]);
+
+  const handleScanCode = (rawCode: string) => {
     if (scanLoading) return;
-    setScanLoading(true);
     setScanError(null);
 
+    // Non-blocking stop QR scanner in background
     if (qrReaderRef.current && qrReaderRef.current.isScanning) {
-      try {
-        await qrReaderRef.current.stop();
-      } catch (e) {
-        console.warn(e);
-      }
+      qrReaderRef.current.stop().then(() => {
+        qrReaderRef.current?.clear();
+      }).catch(e => console.warn(e));
     }
 
     try {
@@ -391,19 +428,38 @@ export default function AttendanceView({ getToken, participants }: Props) {
       }
 
       if (!targetSessionId) {
+        isScanProcessingRef.current = false;
         throw new Error('Kode / QR Code tidak valid.');
       }
 
+      setPendingSessionId(targetSessionId);
+      setScanStep('selfie');
+      setGpsLoading(true);
+      
+      getCurrentLocation().then(loc => {
+        setGpsLocation(loc);
+        setGpsLoading(false);
+      });
+      startSelfieCamera();
+    } catch (err: any) {
+      isScanProcessingRef.current = false;
+      setScanError(err.message || 'Terjadi kesalahan saat scan.');
+    }
+  };
+
+  const submitSelfieAttendance = async () => {
+    if (!pendingSessionId) return;
+    setScanLoading(true);
+    setScanError(null);
+
+    try {
       let selfieDataUrl: string | null = null;
-      const videoEl = document.querySelector('#reader video') as HTMLVideoElement;
-      if (videoEl && videoEl.readyState >= 2) {
-        selfieDataUrl = captureSelfieFromVideo(videoEl);
+      if (selfieVideoRef.current && selfieVideoRef.current.readyState >= 2) {
+        selfieDataUrl = captureSelfieFromVideo(selfieVideoRef.current);
       }
 
-      const locationData = await getCurrentLocation();
-
       const token = await getToken();
-      const res = await fetch(`/api/attendance/${encodeURIComponent(targetSessionId)}/scan`, {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(pendingSessionId)}/scan`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -411,7 +467,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
         },
         body: JSON.stringify({
           photo: selfieDataUrl,
-          location: locationData
+          location: gpsLocation
         })
       });
 
@@ -427,11 +483,14 @@ export default function AttendanceView({ getToken, participants }: Props) {
         throw new Error(data.error || 'Gagal mencatat presensi.');
       }
 
+      stopSelfieCamera();
       setScanSuccessResult({
         message: data.message,
         sessionTitle: data.sessionTitle,
         name: data.name,
-        already: data.already
+        already: data.already,
+        photo: selfieDataUrl,
+        location: gpsLocation
       });
 
       await fetchSessions();
@@ -2186,7 +2245,12 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 </div>
               </div>
               <button
-                onClick={() => setIsScannerOpen(false)}
+                onClick={() => {
+                  stopSelfieCamera();
+                  setIsScannerOpen(false);
+                  setScanStep('scan');
+                  setPendingSessionId(null);
+                }}
                 className="p-1.5 hover:bg-white/20 rounded-full transition-colors text-white/80 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -2195,11 +2259,11 @@ export default function AttendanceView({ getToken, participants }: Props) {
 
             <div className="p-6 space-y-5">
               {scanSuccessResult ? (
-                <div className="text-center space-y-4 py-4 animate-in zoom-in-90 duration-300">
-                  <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto shadow-lg ${
+                <div className="text-center space-y-4 py-2 animate-in zoom-in-90 duration-300">
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-lg ${
                     scanSuccessResult.already ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
                   }`}>
-                    <CheckCircle2 className="w-12 h-12" />
+                    <CheckCircle2 className="w-10 h-10" />
                   </div>
                   <div>
                     <h4 className="text-lg font-extrabold text-gray-900">
@@ -2210,23 +2274,118 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     </p>
                   </div>
 
-                  <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100 text-left text-xs space-y-1">
+                  <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-100 text-left text-xs space-y-2">
                     <p className="text-emerald-900"><strong>Nama Peserta:</strong> {user?.name}</p>
                     <p className="text-emerald-900"><strong>Sesi / Jenis:</strong> {scanSuccessResult.sessionTitle || 'Presensi KKN'}</p>
-                    <p className="text-emerald-900"><strong>Waktu Scan:</strong> {new Date().toLocaleTimeString('id-ID')} WIB</p>
+                    <p className="text-emerald-900"><strong>Waktu Presensi:</strong> {new Date().toLocaleTimeString('id-ID')} WIB</p>
+
+                    {scanSuccessResult.location && (
+                      <p className="text-emerald-900 flex items-center gap-1 font-semibold">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>📍 Lokasi GPS Terverifikasi</span>
+                      </p>
+                    )}
+
+                    {scanSuccessResult.photo && (
+                      <div className="pt-2 border-t border-emerald-200/60">
+                        <span className="text-[10px] font-bold text-emerald-800 block mb-1.5">📸 Foto Selfie Terverifikasi:</span>
+                        <div className="w-24 h-24 rounded-xl overflow-hidden border-2 border-emerald-400 shadow-sm bg-black">
+                          <img src={scanSuccessResult.photo} alt="Selfie Presensi" className="w-full h-full object-cover" />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <button
                     onClick={() => {
                       setScanSuccessResult(null);
                       setIsScannerOpen(false);
+                      setScanStep('scan');
+                      setPendingSessionId(null);
                     }}
                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-all shadow-md"
                   >
                     Selesai & Tutup
                   </button>
                 </div>
+              ) : scanStep === 'selfie' ? (
+                /* STEP 2: SELFIE CAMERA & GPS VERIFICATION */
+                <div className="space-y-4 text-center animate-in fade-in duration-200">
+                  {scanError && (
+                    <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2.5 leading-relaxed font-medium text-left">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <span>{scanError}</span>
+                    </div>
+                  )}
+
+                  <div className="bg-emerald-50/70 p-3 rounded-2xl border border-emerald-100 text-xs text-emerald-900 flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-emerald-600" /> Status Lokasi:
+                    </span>
+                    {gpsLoading ? (
+                      <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Mendeteksi GPS...
+                      </span>
+                    ) : gpsLocation ? (
+                      <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                        📍 GPS Terdeteksi
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                        ⚠️ Tanpa GPS
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative bg-black rounded-3xl overflow-hidden min-h-[280px] max-h-[340px] flex items-center justify-center border-2 border-emerald-500 shadow-inner">
+                    <video
+                      ref={selfieVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover min-h-[280px]"
+                    />
+                    {/* Oval Selfie Face Guide Overlay */}
+                    <div className="absolute inset-0 border-4 border-dashed border-white/60 rounded-full w-48 h-56 m-auto pointer-events-none shadow-2xl flex items-end justify-center pb-3">
+                      <span className="bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-xs">
+                        Posisikan Wajah
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={submitSelfieAttendance}
+                      disabled={scanLoading}
+                      className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {scanLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Mengirim Presensi...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="w-4 h-4" />
+                          <span>Ambil Foto Selfie & Presensi Sekarang</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        stopSelfieCamera();
+                        setScanStep('scan');
+                      }}
+                      disabled={scanLoading}
+                      className="w-full py-2 text-xs font-semibold text-gray-500 hover:text-gray-800 transition-colors"
+                    >
+                      Kembali ke Scan QR
+                    </button>
+                  </div>
+                </div>
               ) : (
+                /* STEP 1: QR SCANNER / MANUAL TOKEN INPUT */
                 <>
                   {scanError && (
                     <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2.5 leading-relaxed font-medium">
@@ -2251,7 +2410,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     </div>
 
                     <p className="text-[11px] text-center text-gray-500">
-                      Arahkan kamera HP Anda ke QR Code Kegiatan KKN, Check-In, atau Check-Out untuk presensi otomatis.
+                      Arahkan kamera HP Anda ke QR Code Check-In atau Check-Out.
                     </p>
                   </div>
                 </>
