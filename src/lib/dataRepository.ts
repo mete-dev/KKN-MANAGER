@@ -742,26 +742,117 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
   (async () => {
     if (isSupabaseConfigured()) {
       try {
-        if (formattedUsers.length) await getSupabase().from('users').upsert(formattedUsers);
-        if (formattedTransactions.length) await getSupabase().from('transactions').upsert(formattedTransactions);
-        if (formattedTasks.length) await getSupabase().from('tasks').upsert(formattedTasks);
-        if (formattedEvents.length) await getSupabase().from('events').upsert(formattedEvents);
-        if (formattedLogs.length) await getSupabase().from('logs').upsert(formattedLogs);
-        if (formattedSessions.length) await getSupabase().from('attendance_sessions').upsert(formattedSessions);
-        if (formattedRecords.length) await getSupabase().from('attendance_records').upsert(formattedRecords);
+        if (formattedUsers.length) {
+          const supabaseUsers = formattedUsers.map((u: any) => ({
+            id: u.id,
+            nim: u.nim,
+            phone: u.phone,
+            password: u.password,
+            email: u.email,
+            name: u.name,
+            role: u.role,
+            permissions: u.permissions,
+            created_at: u.createdAt
+          }));
+          await getSupabase().from('users').upsert(supabaseUsers);
+        }
+        if (formattedTransactions.length) {
+          const supabaseTransactions = formattedTransactions.map((tx: any) => ({
+            id: tx.id,
+            user_id: tx.userId,
+            date: tx.date,
+            description: tx.description,
+            amount: tx.amount,
+            type: tx.type,
+            category: tx.category,
+            proof_link: tx.proofLink,
+            status: tx.status,
+            created_at: tx.createdAt
+          }));
+          await getSupabase().from('transactions').upsert(supabaseTransactions);
+        }
+        if (formattedTasks.length) {
+          const supabaseTasks = formattedTasks.map((t: any) => ({
+            id: t.id,
+            user_id: t.userId,
+            title: t.title,
+            description: t.description,
+            assignee_id: t.assigneeId,
+            status: t.status,
+            task_type: t.taskType,
+            event_id: t.eventId,
+            deadline: t.deadline,
+            priority: t.priority,
+            reference_link: t.referenceLink,
+            created_at: t.createdAt
+          }));
+          await getSupabase().from('tasks').upsert(supabaseTasks);
+        }
+        if (formattedEvents.length) {
+          const supabaseEvents = formattedEvents.map((ev: any) => ({
+            id: ev.id,
+            user_id: ev.userId,
+            date: ev.date,
+            time: ev.time,
+            title: ev.title,
+            description: ev.description,
+            category: ev.category,
+            created_at: ev.createdAt
+          }));
+          await getSupabase().from('events').upsert(supabaseEvents);
+        }
+        if (formattedLogs.length) {
+          const supabaseLogs = formattedLogs.map((l: any) => ({
+            id: l.id,
+            user_id: l.userId,
+            action: l.action,
+            details: l.details,
+            created_at: l.createdAt
+          }));
+          await getSupabase().from('logs').upsert(supabaseLogs);
+        }
+        if (formattedSessions.length) {
+          const supabaseSessions = formattedSessions.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            date: s.date,
+            session_type: s.sessionType,
+            notes: s.notes,
+            is_permanent: s.isPermanent,
+            created_by: s.createdBy,
+            created_at: s.createdAt
+          }));
+          await getSupabase().from('attendance_sessions').upsert(supabaseSessions);
+        }
+        if (formattedRecords.length) {
+          const supabaseRecords = formattedRecords.map((r: any) => ({
+            id: r.id,
+            session_id: r.sessionId,
+            user_id: r.userId,
+            name: r.name,
+            status: r.status,
+            check_in_time: r.checkInTime,
+            check_out_time: r.checkOutTime,
+            notes: r.notes,
+            created_at: r.createdAt
+          }));
+          await getSupabase().from('attendance_records').upsert(supabaseRecords);
+        }
       } catch (e) {
         console.warn('Supabase batch restore error:', e);
       }
     }
 
     try {
-      if (formattedUsers.length) await withTimeout(db.insert(users).values(formattedUsers).onConflictDoNothing(), 1000);
-      if (formattedTransactions.length) await withTimeout(db.insert(transactions).values(formattedTransactions).onConflictDoNothing(), 1000);
-      if (formattedTasks.length) await withTimeout(db.insert(tasks).values(formattedTasks).onConflictDoNothing(), 1000);
-      if (formattedEvents.length) await withTimeout(db.insert(events).values(formattedEvents).onConflictDoNothing(), 1000);
-      if (formattedSessions.length) await withTimeout(db.insert(attendanceSessions).values(formattedSessions).onConflictDoNothing(), 1000);
-      if (formattedRecords.length) await withTimeout(db.insert(attendanceRecords).values(formattedRecords).onConflictDoNothing(), 1000);
-    } catch (e) {}
+      if (formattedUsers.length) await withTimeout(db.insert(users).values(formattedUsers).onConflictDoNothing(), 15000);
+      if (formattedTransactions.length) await withTimeout(db.insert(transactions).values(formattedTransactions).onConflictDoNothing(), 15000);
+      if (formattedTasks.length) await withTimeout(db.insert(tasks).values(formattedTasks).onConflictDoNothing(), 15000);
+      if (formattedEvents.length) await withTimeout(db.insert(events).values(formattedEvents).onConflictDoNothing(), 15000);
+      if (formattedSessions.length) await withTimeout(db.insert(attendanceSessions).values(formattedSessions).onConflictDoNothing(), 15000);
+      if (formattedRecords.length) await withTimeout(db.insert(attendanceRecords).values(formattedRecords).onConflictDoNothing(), 15000);
+    } catch (e) {
+      console.warn('Drizzle batch restore error:', e);
+    }
   })();
 
   return {
