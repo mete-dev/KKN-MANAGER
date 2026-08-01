@@ -882,6 +882,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 </button>
               )}
             </div>
+          ) : (
             <div className="flex flex-col gap-4 max-w-5xl mx-auto w-full">
               {filteredSessions.map((session) => {
                 const isLocked = session.isPermanent === 1;
