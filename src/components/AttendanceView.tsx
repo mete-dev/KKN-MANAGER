@@ -799,42 +799,29 @@ export default function AttendanceView({ getToken, participants }: Props) {
         <div className="space-y-6">
           {/* STATS HIGHLIGHT */}
           {sessions.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 font-bold text-lg shrink-0">
-                  {attendanceRate}%
-                </div>
-                <div>
-                  <h4 className="text-xs text-gray-500 font-medium">Tingkat Kehadiran</h4>
-                  <p className="text-lg font-bold text-gray-900">Rata-Rata Sesi</p>
-                </div>
+            <div className="bg-white px-5 py-3 rounded-2xl border border-gray-100 shadow-xs flex flex-wrap items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs"></span>
+                <span className="text-gray-500 font-medium">Kehadiran Rata-Rata:</span>
+                <span className="font-bold text-gray-900">{attendanceRate}%</span>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 font-bold shrink-0">
-                  <Info className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-xs text-gray-500 font-medium">Total Sesi Kegiatan</h4>
-                  <p className="text-lg font-bold text-gray-900">{sessions.length} Sesi</p>
-                </div>
+              <div className="w-px h-4 bg-gray-200 hidden sm:block"></div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-xs"></span>
+                <span className="text-gray-500 font-medium">Total Sesi Kegiatan:</span>
+                <span className="font-bold text-gray-900">{sessions.length} Sesi</span>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 font-bold shrink-0">
-                  <CheckCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-xs text-gray-500 font-medium">Total Hadir</h4>
-                  <p className="text-lg font-bold text-gray-900">{totalPresent} Presensi</p>
-                </div>
+              <div className="w-px h-4 bg-gray-200 hidden sm:block"></div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-xs"></span>
+                <span className="text-gray-500 font-medium">Total Hadir:</span>
+                <span className="font-bold text-gray-900">{totalPresent} Presensi</span>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 bg-teal-50 rounded-lg flex items-center justify-center text-teal-600 font-bold shrink-0">
-                  <QrCode className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-xs text-gray-500 font-medium">Presensi QR</h4>
-                  <p className="text-lg font-bold text-teal-800">Siap Digunakan</p>
-                </div>
+              <div className="w-px h-4 bg-gray-200 hidden sm:block"></div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-500 shadow-xs animate-pulse"></span>
+                <span className="text-gray-500 font-medium">Sistem QR:</span>
+                <span className="font-bold text-teal-700">Aktif & Siap</span>
               </div>
             </div>
           )}
@@ -907,110 +894,113 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 return (
                   <div 
                     key={session.id} 
-                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4"
+                    className="bg-white rounded-2xl border border-gray-100 shadow-xs hover:shadow-sm transition-all p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
                   >
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                          <QrCode className="w-3 h-3 text-emerald-600" /> Presensi Kegiatan
-                        </span>
+                    {/* LEFT: Title & Date & Status Badge */}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center flex-wrap gap-2">
                         {isLocked ? (
-                          <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Lock className="w-3 h-3" /> Permanen
+                          <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0">
+                            <Lock className="w-2.5 h-2.5" /> Permanen
                           </span>
                         ) : (
-                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Unlock className="w-3 h-3" /> Draf
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0">
+                            <Unlock className="w-2.5 h-2.5" /> Draf
+                          </span>
+                        )}
+                        <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate" title={session.title}>
+                          {session.title}
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{new Date(session.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                        </div>
+                        {session.notes && (
+                          <span className="text-gray-500 line-clamp-1 max-w-[220px] italic border-l border-gray-200 pl-3 hidden sm:inline" title={session.notes}>
+                            "{session.notes}"
                           </span>
                         )}
                       </div>
+                    </div>
 
-                      <div>
-                        <h3 className="font-bold text-gray-900 text-base line-clamp-1" title={session.title}>
-                          {session.title}
-                        </h3>
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>{new Date(session.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                        </div>
+                    {/* MIDDLE: Stats Row */}
+                    <div className="flex flex-wrap items-center gap-1.5 bg-gray-50/50 p-1.5 rounded-xl border border-gray-100/50 self-start lg:self-auto shrink-0">
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span className="text-gray-500 font-semibold">Hadir:</span>
+                        <span className="font-bold text-emerald-750">{hadirCount}</span>
                       </div>
-
-                      {session.notes && (
-                        <p className="text-xs text-gray-500 line-clamp-2 bg-gray-50 p-2 rounded-lg border border-gray-100 leading-relaxed italic">
-                          "{session.notes}"
-                        </p>
-                      )}
-
-                      <div className="grid grid-cols-5 gap-1 text-center text-[10px] font-semibold bg-gray-50/70 p-2 rounded-xl border border-gray-100">
-                        <div className="text-emerald-700">
-                          <span className="block text-sm font-black">{hadirCount}</span>
-                          Hadir
-                        </div>
-                        <div className="text-gray-600">
-                          <span className="block text-sm font-black text-gray-700">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</span>
-                          Belum
-                        </div>
-                        <div className="text-blue-700">
-                          <span className="block text-sm font-black">{session.counts?.sakit || 0}</span>
-                          Sakit
-                        </div>
-                        <div className="text-amber-700">
-                          <span className="block text-sm font-black">{session.counts?.izin || 0}</span>
-                          Izin
-                        </div>
-                        <div className="text-red-700">
-                          <span className="block text-sm font-black">{session.counts?.alfa || 0}</span>
-                          Alfa
-                        </div>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                        <span className="text-gray-500 font-semibold">Belum:</span>
+                        <span className="font-bold text-gray-700">{belumAbsenCount < 0 ? 0 : belumAbsenCount}</span>
+                      </div>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                        <span className="text-gray-500 font-semibold">Sakit:</span>
+                        <span className="font-bold text-blue-700">{session.counts?.sakit || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span className="text-gray-500 font-semibold">Izin:</span>
+                        <span className="font-bold text-amber-700">{session.counts?.izin || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-1 px-2.5 py-0.5 bg-white rounded-lg border border-gray-100/80 shadow-3xs text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                        <span className="text-gray-500 font-semibold">Alfa:</span>
+                        <span className="font-bold text-red-700">{session.counts?.alfa || 0}</span>
                       </div>
                     </div>
 
-                    {/* Action buttons tailored by role */}
-                    <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                    {/* RIGHT: Actions */}
+                    <div className="flex items-center gap-1.5 self-end lg:self-auto shrink-0 border-t lg:border-t-0 pt-2 lg:pt-0 border-gray-100 w-full lg:w-auto justify-end">
                       {isSekretarisOrLeader ? (
                         <>
                           <button
                             onClick={() => setQrModalSession(session)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-100"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm"
                             title="Buat & Tampilkan Token QR Absensi Kegiatan"
                           >
-                            <QrCode className="w-4 h-4 text-white" />
-                            <span>Buat Token QR</span>
+                            <QrCode className="w-3.5 h-3.5" />
+                            <span>Token QR</span>
                           </button>
 
-                          <div className="flex items-center gap-1.5 ml-auto">
-                            <button
-                              onClick={() => loadSession(session, 'detail')}
-                              className="text-xs font-semibold text-gray-700 hover:text-emerald-700 bg-gray-50 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-all border border-gray-100 flex items-center gap-1"
-                            >
-                              Rekap
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
+                          <button
+                            onClick={() => loadSession(session, 'detail')}
+                            className="text-xs font-bold text-gray-700 hover:text-emerald-700 bg-gray-50 hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-all border border-gray-100 flex items-center gap-0.5"
+                          >
+                            <span>Rekap</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
 
-                            <button
-                              onClick={() => loadSession(session, 'edit')}
-                              className={`text-xs font-semibold p-1.5 rounded-lg transition-all flex items-center gap-1 ${
-                                canEditThis 
-                                  ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-100'
-                                  : 'text-gray-300 bg-gray-50 cursor-not-allowed'
-                              }`}
-                              title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
+                          <button
+                            disabled={!canEditThis}
+                            onClick={() => loadSession(session, 'edit')}
+                            className={`p-1.5 rounded-lg border transition-all ${
+                              canEditThis 
+                                ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-100'
+                                : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
+                            }`}
+                            title={canEditThis ? 'Ubah Status Presensi & Catatan' : 'Terkunci'}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
 
-                            <button
-                              onClick={() => handleDeleteSession(session.id, isLocked)}
-                              className={`p-1.5 rounded-lg transition-all ${
-                                canEditThis 
-                                  ? 'text-red-600 bg-red-50 hover:bg-red-100'
-                                  : 'text-gray-300 bg-gray-50 cursor-not-allowed'
-                              }`}
-                              title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          <button
+                            disabled={!canEditThis}
+                            onClick={() => handleDeleteSession(session.id, isLocked)}
+                            className={`p-1.5 rounded-lg border transition-all ${
+                              canEditThis 
+                                ? 'text-red-600 bg-red-50 hover:bg-red-100 border-red-100'
+                                : 'text-gray-300 bg-gray-50 border-gray-100 cursor-not-allowed'
+                            }`}
+                            title={canEditThis ? 'Hapus Sesi Absensi' : 'Terkunci'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </>
                       ) : (
                         <>
@@ -1021,21 +1011,20 @@ export default function AttendanceView({ getToken, participants }: Props) {
                               setScanError(null);
                               setManualCode(session.id);
                             }}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-100"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 shadow-sm"
                             title="Scan QR atau Presensi untuk Sesi Ini"
                           >
-                            <ScanLine className="w-4 h-4 text-white" />
-                            <span>Scan QR Presensi</span>
+                            <ScanLine className="w-3.5 h-3.5" />
+                            <span>Scan QR</span>
                           </button>
 
                           <button
                             onClick={() => loadSession(session, 'detail')}
-                            className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-xs font-semibold px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 border border-gray-200/70 ml-auto"
-                            title="Lihat List Kehadiran Sesi Ini"
+                            className="bg-gray-50 hover:bg-emerald-50 text-gray-800 hover:text-emerald-800 text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 border border-gray-200/70"
                           >
                             <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>List Kehadiran</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <span>List</span>
+                            <ChevronRight className="w-3 h-3" />
                           </button>
                         </>
                       )}
@@ -1052,38 +1041,38 @@ export default function AttendanceView({ getToken, participants }: Props) {
       {view === 'list' && activeSubTab === 'harian' && (
         <div className="space-y-6">
           {/* TWO MAIN QR CARDS: CHECK-IN & CHECK-OUT */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* CARD 1: QR ABSENSI CHECK IN */}
-            <div className="bg-gradient-to-br from-emerald-50 via-white to-teal-50/30 p-6 rounded-3xl border border-emerald-200/80 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-md shadow-emerald-200">
-                    <LogIn className="w-5 h-5" />
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 bg-emerald-600 text-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                    <LogIn className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-base">QR Absensi Check-In</h3>
-                    <p className="text-xs text-emerald-800 font-medium">Batas Maksimal: Jam 10:00 WIB</p>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate">Absensi Check-In</h3>
+                    <p className="text-[10px] sm:text-xs text-emerald-800 font-medium">Batas: 10:00 WIB</p>
                   </div>
                 </div>
 
-                <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                   wibInfo.isCheckInOpen 
-                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
-                    : 'bg-rose-100 text-rose-800 border-rose-200'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-100' 
+                    : 'bg-rose-50 text-rose-800 border-rose-100'
                 }`}>
-                  {wibInfo.isCheckInOpen ? '🟢 Check-In Buka' : '🔴 Check-In Ditutup'}
+                  {wibInfo.isCheckInOpen ? 'Check-In Buka' : 'Check-In Tutup'}
                 </span>
               </div>
 
-              <p className="text-xs text-gray-600 leading-relaxed bg-white/80 p-3 rounded-2xl border border-emerald-100/60">
-                Gunakan QR Code ini untuk mencatat jam kedatangan harian anggota KKN. Batas waktu scanning maksimal pukul <strong>10:00 WIB</strong>.
+              <p className="text-xs text-gray-500 leading-normal bg-gray-50/50 p-2.5 rounded-xl border border-gray-100/60">
+                Pencatatan jam kedatangan harian anggota (maksimal pukul <strong>10:00 WIB</strong>).
               </p>
 
-              <div className="pt-2 flex items-center justify-between gap-3">
+              <div>
                 {isSekretarisOrLeader ? (
                   <button
                     onClick={() => setDailyQrModalType('checkin')}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
                     <QrCode className="w-4 h-4" />
                     <span>Tampilkan QR Check-In</span>
@@ -1096,46 +1085,46 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       setScanError(null);
                       setManualCode('CHECKIN');
                     }}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-emerald-200 flex items-center justify-center gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
                     <ScanLine className="w-4 h-4" />
-                    <span>📷 Scan QR Check-In Saya</span>
+                    <span>Scan QR Check-In Saya</span>
                   </button>
                 )}
               </div>
             </div>
 
             {/* CARD 2: QR ABSENSI CHECK OUT */}
-            <div className="bg-gradient-to-br from-blue-50 via-white to-indigo-50/30 p-6 rounded-3xl border border-blue-200/80 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-md shadow-blue-200">
-                    <LogOut className="w-5 h-5" />
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                    <LogOut className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-gray-900 text-base">QR Absensi Check-Out</h3>
-                    <p className="text-xs text-blue-800 font-medium">Batas Maksimal: Jam 22:00 WIB</p>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-gray-900 text-sm sm:text-base truncate">Absensi Check-Out</h3>
+                    <p className="text-[10px] sm:text-xs text-blue-800 font-medium">Batas: 22:00 WIB</p>
                   </div>
                 </div>
 
-                <span className={`text-[11px] font-bold px-3 py-1 rounded-full border ${
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                   wibInfo.isCheckOutOpen 
-                    ? 'bg-blue-100 text-blue-800 border-blue-200' 
-                    : 'bg-rose-100 text-rose-800 border-rose-200'
+                    ? 'bg-blue-50 text-blue-800 border-blue-100' 
+                    : 'bg-rose-50 text-rose-800 border-rose-100'
                 }`}>
-                  {wibInfo.isCheckOutOpen ? '🟢 Check-Out Buka' : '🔴 Check-Out Ditutup'}
+                  {wibInfo.isCheckOutOpen ? 'Check-Out Buka' : 'Check-Out Tutup'}
                 </span>
               </div>
 
-              <p className="text-xs text-gray-600 leading-relaxed bg-white/80 p-3 rounded-2xl border border-blue-100/60">
-                Gunakan QR Code ini untuk mencatat kepulangan/selesai kegiatan harian anggota KKN. Batas waktu scanning maksimal pukul <strong>22:00 WIB</strong>.
+              <p className="text-xs text-gray-500 leading-normal bg-gray-50/50 p-2.5 rounded-xl border border-gray-100/60">
+                Pencatatan kepulangan/selesai kegiatan harian (maksimal pukul <strong>22:00 WIB</strong>).
               </p>
 
-              <div className="pt-2 flex items-center justify-between gap-3">
+              <div>
                 {isSekretarisOrLeader ? (
                   <button
                     onClick={() => setDailyQrModalType('checkout')}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
                     <QrCode className="w-4 h-4" />
                     <span>Tampilkan QR Check-Out</span>
@@ -1148,10 +1137,10 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       setScanError(null);
                       setManualCode('CHECKOUT');
                     }}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs sm:text-sm transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
                     <ScanLine className="w-4 h-4" />
-                    <span>📷 Scan QR Check-Out Saya</span>
+                    <span>Scan QR Check-Out Saya</span>
                   </button>
                 )}
               </div>
