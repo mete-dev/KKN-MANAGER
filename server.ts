@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+
 import { requireAuth, AuthRequest } from "./src/middleware/auth";
 import { db, pool } from "./src/db/index";
 import { users, transactions, tasks, events, logs, transactionLogs, attendanceSessions, attendanceRecords } from "./src/db/schema";
@@ -1242,13 +1242,15 @@ app.use(express.json());
     }
   });
 
-  // Vite middleware for development
+  // Vite middleware for development (dynamic import to avoid crashing in production)
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-    createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    }).then((vite) => {
-      app.use(vite.middlewares);
+    import("vite").then(({ createServer: createViteServer }) => {
+      createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      }).then((vite) => {
+        app.use(vite.middlewares);
+      });
     });
   } else if (!process.env.VERCEL) {
     const distPath = path.join(process.cwd(), 'dist');
