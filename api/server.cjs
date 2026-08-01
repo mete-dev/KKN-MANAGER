@@ -64452,6 +64452,9 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
+  if (req.url && !req.url.startsWith("/api/") && req.url !== "/api") {
+    req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
+  }
   next();
 });
 app.use(import_express.default.json());
@@ -65508,6 +65511,12 @@ if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     res.sendFile(import_path.default.join(distPath, "index.html"));
   });
 }
+app.use((err, req, res, next) => {
+  console.error("Global Express Error:", err);
+  res.status(err.status || 500).json({
+    error: err.message || "Internal Server Error"
+  });
+});
 if (!process.env.VERCEL) {
   const PORT = Number(process.env.PORT) || 3025;
   app.listen(PORT, "0.0.0.0", () => {

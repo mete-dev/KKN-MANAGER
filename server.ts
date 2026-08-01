@@ -48,6 +48,10 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
+  // Normalize req.url for Vercel serverless function rewrites
+  if (req.url && !req.url.startsWith('/api/') && req.url !== '/api') {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
   next();
 });
 
@@ -1269,6 +1273,14 @@ app.use(express.json());
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Global JSON error handler middleware
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Global Express Error:", err);
+    res.status(err.status || 500).json({
+      error: err.message || "Internal Server Error"
+    });
+  });
 
   if (!process.env.VERCEL) {
     const PORT = Number(process.env.PORT) || 3025;
