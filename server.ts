@@ -138,39 +138,21 @@ app.use(express.json());
       let user = await repositoryFindUserByPhoneOrNim(inputClean);
 
       if (!user) {
-        // Auto-register user with default 'Anggota' role if phone is not yet in repository
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newId = uuidv4();
-        const defaultPerms = JSON.stringify({ participants: 'r', finance: 'r', tasks: 'r', calendar: 'r', attendance: 'r' });
-        
-        user = await repositoryInsertUser({
-          id: newId,
-          nim: '',
-          phone: inputClean,
-          password: hashedPassword,
-          name: `Anggota (${inputClean})`,
-          email: `${inputClean}@kkn.local`,
-          role: 'Anggota',
-          permissions: defaultPerms
-        });
+        return res.status(401).json({ error: "Nomor HP atau NIM tidak terdaftar. Silakan mendaftar terlebih dahulu." });
+      }
 
-        await logActivity(user.id, "Auto-Register Login", `Pengguna baru otomatis terdaftar saat login dengan nomor ${inputClean}`);
-      } else {
-        // Verify password
-        let validPassword = await bcrypt.compare(password, user.password);
-        
-        // Fallback: If user password in DB was set as plain text '123456', 6-digit phone suffix, or password matches fallback
-        const last6 = user.phone ? String(user.phone).slice(-6) : '';
-        if (!validPassword && (password === '123456' || (last6 && password === last6) || user.password === password || user.password === '123456' || (last6 && user.password === last6))) {
-          validPassword = true;
-          // Upgrade password hash
-          const updatedHash = await bcrypt.hash(password, 10);
-          await repositoryUpdateUser(user.id, { password: updatedHash });
-        }
+      // Verify password strictly against bcrypt hash stored in DB / Supabase
+      let validPassword = await bcrypt.compare(password, user.password);
+      
+      // Fallback: If user password in DB was stored in plain text, accept and upgrade to bcrypt hash
+      if (!validPassword && user.password === password) {
+        validPassword = true;
+        const updatedHash = await bcrypt.hash(password, 10);
+        await repositoryUpdateUser(user.id, { password: updatedHash });
+      }
 
-        if (!validPassword) {
-          return res.status(401).json({ error: "Password salah. Silakan coba lagi dengan password Anda, 6 digit terakhir nomor HP, atau password default 123456." });
-        }
+      if (!validPassword) {
+        return res.status(401).json({ error: "Password salah. Silakan coba lagi." });
       }
 
       await logActivity(user.id, "Login", "Berhasil masuk ke aplikasi");

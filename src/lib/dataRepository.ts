@@ -5,7 +5,7 @@ import { isSupabaseConfigured, getSupabase } from './supabase';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
-const DEFAULT_PASS_HASH = bcrypt.hashSync('123456', 10);
+const DEFAULT_PASS_HASH = bcrypt.hashSync('486908', 10);
 const DEFAULT_PERMS = JSON.stringify({ participants: 'rw', finance: 'rw', tasks: 'rw', calendar: 'rw', attendance: 'rw' });
 
 function normalizePhoneDigits(phone: string): string {

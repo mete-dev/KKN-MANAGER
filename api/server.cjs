@@ -63644,7 +63644,7 @@ var isSupabaseConfigured = () => {
 };
 
 // src/lib/dataRepository.ts
-var DEFAULT_PASS_HASH = bcryptjs_default.hashSync("123456", 10);
+var DEFAULT_PASS_HASH = bcryptjs_default.hashSync("486908", 10);
 var DEFAULT_PERMS = JSON.stringify({ participants: "rw", finance: "rw", tasks: "rw", calendar: "rw", attendance: "rw" });
 function normalizePhoneDigits(phone) {
   if (!phone) return "";
@@ -64516,31 +64516,16 @@ app.post("/api/auth/login", async (req, res) => {
     const inputClean = String(phone).trim();
     let user = await repositoryFindUserByPhoneOrNim(inputClean);
     if (!user) {
-      const hashedPassword = await bcryptjs_default.hash(password, 10);
-      const newId = v4_default();
-      const defaultPerms = JSON.stringify({ participants: "r", finance: "r", tasks: "r", calendar: "r", attendance: "r" });
-      user = await repositoryInsertUser({
-        id: newId,
-        nim: "",
-        phone: inputClean,
-        password: hashedPassword,
-        name: `Anggota (${inputClean})`,
-        email: `${inputClean}@kkn.local`,
-        role: "Anggota",
-        permissions: defaultPerms
-      });
-      await logActivity(user.id, "Auto-Register Login", `Pengguna baru otomatis terdaftar saat login dengan nomor ${inputClean}`);
-    } else {
-      let validPassword = await bcryptjs_default.compare(password, user.password);
-      const last6 = user.phone ? String(user.phone).slice(-6) : "";
-      if (!validPassword && (password === "123456" || last6 && password === last6 || user.password === password || user.password === "123456" || last6 && user.password === last6)) {
-        validPassword = true;
-        const updatedHash = await bcryptjs_default.hash(password, 10);
-        await repositoryUpdateUser(user.id, { password: updatedHash });
-      }
-      if (!validPassword) {
-        return res.status(401).json({ error: "Password salah. Silakan coba lagi dengan password Anda, 6 digit terakhir nomor HP, atau password default 123456." });
-      }
+      return res.status(401).json({ error: "Nomor HP atau NIM tidak terdaftar. Silakan mendaftar terlebih dahulu." });
+    }
+    let validPassword = await bcryptjs_default.compare(password, user.password);
+    if (!validPassword && user.password === password) {
+      validPassword = true;
+      const updatedHash = await bcryptjs_default.hash(password, 10);
+      await repositoryUpdateUser(user.id, { password: updatedHash });
+    }
+    if (!validPassword) {
+      return res.status(401).json({ error: "Password salah. Silakan coba lagi." });
     }
     await logActivity(user.id, "Login", "Berhasil masuk ke aplikasi");
     const token = import_jsonwebtoken2.default.sign({ id: user.id, phone: user.phone, name: user.name }, JWT_SECRET2, { expiresIn: "7d" });
