@@ -976,12 +976,24 @@ app.use(express.json());
         return null;
       };
 
-      // Geofencing location check if location is provided (skipped for Super Admin bypass)
-      if (!isSuperAdminBypass && location && typeof location.lat === 'number' && typeof location.lng === 'number') {
+      const isDailyAttendance = upperParamId.includes('CHECKIN') || upperParamId.includes('CHECKOUT');
+
+      // Mandatory location (Geofence Posko 500m) & photo check ONLY for Absen Harian (unless super admin bypass)
+      if (isDailyAttendance && !isSuperAdminBypass) {
+        if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+          return res.status(400).json({
+            error: "Presensi Harian Gagal: Lokasi GPS tidak terdeteksi. Silakan aktifkan GPS/Lokasi pada HP Anda dan izinkan akses lokasi di browser."
+          });
+        }
+        if (!photo || typeof photo !== 'string' || !photo.startsWith('data:image')) {
+          return res.status(400).json({
+            error: "Presensi Harian Gagal: Foto selfie belum diambil. Silakan izinkan kamera dan ambil foto selfie terlebih dahulu."
+          });
+        }
         const distMeters = calculateDistanceMeters(POSKO_LAT, POSKO_LNG, location.lat, location.lng);
         if (distMeters > MAX_POSKO_RADIUS_METERS) {
           return res.status(400).json({
-            error: "Presensi Gagal: Anda berada di luar area Posko KKN. Silakan lakukan presensi di sekitar area Posko KKN."
+            error: "Presensi Harian Gagal: Anda berada di luar area Posko KKN (lebih dari 500 meter). Silakan lakukan presensi harian di sekitar area Posko KKN."
           });
         }
       }
@@ -1110,6 +1122,12 @@ app.use(express.json());
       const { timeStr } = getWibDateTime();
       const displayTime = `${timeStr.slice(0,5)} WIB`;
 
+      const gpsStr = (location && typeof location.lat === 'number' && typeof location.lng === 'number')
+        ? `📍 GPS: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
+        : '';
+      const photoStr = photo ? `[PHOTO:${photo}]` : '';
+      const noteTag = [gpsStr, photoStr].filter(Boolean).join(' ');
+
       if (records.length > 0) {
         const rec = records[0];
         if (rec.status === 'Hadir') {
@@ -1118,13 +1136,18 @@ app.use(express.json());
           });
         }
 
+        const combinedNotes = rec.notes
+          ? [rec.notes, noteTag, `(Scan QR ${displayTime})`].filter(Boolean).join(' | ')
+          : [noteTag, `Presensi via QR Scan (${displayTime})`].filter(Boolean).join(' ');
+
         await safeUpdateRecord(rec.id, {
           status: 'Hadir',
           checkInTime: rec.checkInTime || displayTime,
-          notes: rec.notes ? `${rec.notes} (Scan QR ${displayTime})` : `Presensi via QR Scan (${displayTime})`
+          notes: combinedNotes
         });
 
       } else {
+        const combinedNotes = [noteTag, `Presensi via QR Scan (${displayTime})`].filter(Boolean).join(' ');
         await safeInsertRecord({
           id: uuidv4(),
           sessionId,
@@ -1132,7 +1155,7 @@ app.use(express.json());
           name: currentUser.name,
           status: 'Hadir',
           checkInTime: displayTime,
-          notes: `Presensi via QR Scan (${displayTime})`
+          notes: combinedNotes
         });
       }
 

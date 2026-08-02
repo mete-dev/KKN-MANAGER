@@ -65237,11 +65237,22 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
       if (match8Digits) return `${match8Digits[1]}-${match8Digits[2]}-${match8Digits[3]}`;
       return null;
     };
-    if (!isSuperAdminBypass && location2 && typeof location2.lat === "number" && typeof location2.lng === "number") {
+    const isDailyAttendance = upperParamId.includes("CHECKIN") || upperParamId.includes("CHECKOUT");
+    if (isDailyAttendance && !isSuperAdminBypass) {
+      if (!location2 || typeof location2.lat !== "number" || typeof location2.lng !== "number") {
+        return res.status(400).json({
+          error: "Presensi Harian Gagal: Lokasi GPS tidak terdeteksi. Silakan aktifkan GPS/Lokasi pada HP Anda dan izinkan akses lokasi di browser."
+        });
+      }
+      if (!photo || typeof photo !== "string" || !photo.startsWith("data:image")) {
+        return res.status(400).json({
+          error: "Presensi Harian Gagal: Foto selfie belum diambil. Silakan izinkan kamera dan ambil foto selfie terlebih dahulu."
+        });
+      }
       const distMeters = calculateDistanceMeters(POSKO_LAT, POSKO_LNG, location2.lat, location2.lng);
       if (distMeters > MAX_POSKO_RADIUS_METERS) {
         return res.status(400).json({
-          error: "Presensi Gagal: Anda berada di luar area Posko KKN. Silakan lakukan presensi di sekitar area Posko KKN."
+          error: "Presensi Harian Gagal: Anda berada di luar area Posko KKN (lebih dari 500 meter). Silakan lakukan presensi harian di sekitar area Posko KKN."
         });
       }
     }
@@ -65271,9 +65282,9 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
       }
       const existingRec = (await safeSelectRecordsBySessionId(sessionId2)).filter((r) => r.userId === userId);
       const displayTime2 = `${timeStr2.slice(0, 5)} WIB`;
-      const gpsStr = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
-      const photoStr = photo ? `[PHOTO:${photo}]` : "";
-      const noteTag = [gpsStr, photoStr].filter(Boolean).join(" ");
+      const gpsStr2 = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
+      const photoStr2 = photo ? `[PHOTO:${photo}]` : "";
+      const noteTag2 = [gpsStr2, photoStr2].filter(Boolean).join(" ");
       if (existingRec.length > 0) {
         const rec = existingRec[0];
         if (rec.checkInTime && rec.checkInTime !== "-") {
@@ -65282,7 +65293,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         await safeUpdateRecord(rec.id, {
           status: "Hadir",
           checkInTime: displayTime2,
-          notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(" | ") : noteTag
+          notes: rec.notes ? [rec.notes, noteTag2].filter(Boolean).join(" | ") : noteTag2
         });
       } else {
         await safeInsertRecord({
@@ -65292,7 +65303,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           name: currentUser.name,
           status: "Hadir",
           checkInTime: displayTime2,
-          notes: noteTag
+          notes: noteTag2
         });
       }
       return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime2} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
@@ -65323,9 +65334,9 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
       }
       const existingRec = (await safeSelectRecordsBySessionId(sessionId2)).filter((r) => r.userId === userId);
       const displayTime2 = `${timeStr2.slice(0, 5)} WIB`;
-      const gpsStr = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
-      const photoStr = photo ? `[PHOTO:${photo}]` : "";
-      const noteTag = [gpsStr, photoStr].filter(Boolean).join(" ");
+      const gpsStr2 = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
+      const photoStr2 = photo ? `[PHOTO:${photo}]` : "";
+      const noteTag2 = [gpsStr2, photoStr2].filter(Boolean).join(" ");
       if (existingRec.length > 0) {
         const rec = existingRec[0];
         if (rec.checkOutTime && rec.checkOutTime !== "-") {
@@ -65333,7 +65344,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         }
         await safeUpdateRecord(rec.id, {
           checkOutTime: displayTime2,
-          notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(" | ") : noteTag
+          notes: rec.notes ? [rec.notes, noteTag2].filter(Boolean).join(" | ") : noteTag2
         });
       } else {
         await safeInsertRecord({
@@ -65343,7 +65354,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           name: currentUser.name,
           status: "Hadir",
           checkOutTime: displayTime2,
-          notes: noteTag
+          notes: noteTag2
         });
       }
       return res.json({ success: true, message: `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime2} dicatat.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
@@ -65356,6 +65367,9 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
     const records = (await safeSelectRecordsBySessionId(sessionId)).filter((r) => r.userId === userId);
     const { timeStr } = getWibDateTime();
     const displayTime = `${timeStr.slice(0, 5)} WIB`;
+    const gpsStr = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
+    const photoStr = photo ? `[PHOTO:${photo}]` : "";
+    const noteTag = [gpsStr, photoStr].filter(Boolean).join(" ");
     if (records.length > 0) {
       const rec = records[0];
       if (rec.status === "Hadir") {
@@ -65363,12 +65377,14 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           error: `Halo ${currentUser.name}, Anda sudah tercatat HADIR pada sesi "${session[0].title}".`
         });
       }
+      const combinedNotes = rec.notes ? [rec.notes, noteTag, `(Scan QR ${displayTime})`].filter(Boolean).join(" | ") : [noteTag, `Presensi via QR Scan (${displayTime})`].filter(Boolean).join(" ");
       await safeUpdateRecord(rec.id, {
         status: "Hadir",
         checkInTime: rec.checkInTime || displayTime,
-        notes: rec.notes ? `${rec.notes} (Scan QR ${displayTime})` : `Presensi via QR Scan (${displayTime})`
+        notes: combinedNotes
       });
     } else {
+      const combinedNotes = [noteTag, `Presensi via QR Scan (${displayTime})`].filter(Boolean).join(" ");
       await safeInsertRecord({
         id: v4_default(),
         sessionId,
@@ -65376,7 +65392,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         name: currentUser.name,
         status: "Hadir",
         checkInTime: displayTime,
-        notes: `Presensi via QR Scan (${displayTime})`
+        notes: combinedNotes
       });
     }
     await logActivity(currentUser.id, "Presensi QR", `Berhasil melakukan presensi via QR pada: ${session[0].title}`);

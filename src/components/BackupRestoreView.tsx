@@ -15,6 +15,27 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
   const [restoreSuccess, setRestoreSuccess] = useState<any | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  const sanitizeForExcel = (rows: any[]) => {
+    if (!Array.isArray(rows)) return [];
+    return rows.map(row => {
+      if (!row || typeof row !== 'object') return row;
+      const newRow: any = {};
+      for (const key of Object.keys(row)) {
+        let val = row[key];
+        if (typeof val === 'string' && val.length > 30000) {
+          if (val.includes('data:image/')) {
+            val = val.replace(/\[PHOTO:data:image\/[^\]]+\]/g, '[PHOTO:foto_terlampir_di_backup_json]');
+          }
+          if (val.length > 30000) {
+            val = val.slice(0, 30000) + '...[DITRUNCATE_UNTUK_EXCEL]';
+          }
+        }
+        newRow[key] = val;
+      }
+      return newRow;
+    });
+  };
+
   const handleExportBackup = async () => {
     setLoading(true);
     try {
@@ -33,35 +54,35 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
       const wb = xlsx.utils.book_new();
 
       // Sheet 1: Users
-      const wsUsers = xlsx.utils.json_to_sheet(data.users || []);
+      const wsUsers = xlsx.utils.json_to_sheet(sanitizeForExcel(data.users || []));
       xlsx.utils.book_append_sheet(wb, wsUsers, "Users");
 
       // Sheet 2: Transactions
-      const wsTransactions = xlsx.utils.json_to_sheet(data.transactions || []);
+      const wsTransactions = xlsx.utils.json_to_sheet(sanitizeForExcel(data.transactions || []));
       xlsx.utils.book_append_sheet(wb, wsTransactions, "Transactions");
 
       // Sheet 3: Tasks
-      const wsTasks = xlsx.utils.json_to_sheet(data.tasks || []);
+      const wsTasks = xlsx.utils.json_to_sheet(sanitizeForExcel(data.tasks || []));
       xlsx.utils.book_append_sheet(wb, wsTasks, "Tasks");
 
       // Sheet 4: Events
-      const wsEvents = xlsx.utils.json_to_sheet(data.events || []);
+      const wsEvents = xlsx.utils.json_to_sheet(sanitizeForExcel(data.events || []));
       xlsx.utils.book_append_sheet(wb, wsEvents, "Events");
 
       // Sheet 5: Logs
-      const wsLogs = xlsx.utils.json_to_sheet(data.logs || []);
+      const wsLogs = xlsx.utils.json_to_sheet(sanitizeForExcel(data.logs || []));
       xlsx.utils.book_append_sheet(wb, wsLogs, "Logs");
 
       // Sheet 6: TransactionLogs
-      const wsTxLogs = xlsx.utils.json_to_sheet(data.transactionLogs || []);
+      const wsTxLogs = xlsx.utils.json_to_sheet(sanitizeForExcel(data.transactionLogs || []));
       xlsx.utils.book_append_sheet(wb, wsTxLogs, "TransactionLogs");
 
       // Sheet 7: AttendanceSessions
-      const wsAttSessions = xlsx.utils.json_to_sheet(data.attendanceSessions || []);
+      const wsAttSessions = xlsx.utils.json_to_sheet(sanitizeForExcel(data.attendanceSessions || []));
       xlsx.utils.book_append_sheet(wb, wsAttSessions, "AttendanceSessions");
 
       // Sheet 8: AttendanceRecords
-      const wsAttRecords = xlsx.utils.json_to_sheet(data.attendanceRecords || []);
+      const wsAttRecords = xlsx.utils.json_to_sheet(sanitizeForExcel(data.attendanceRecords || []));
       xlsx.utils.book_append_sheet(wb, wsAttRecords, "AttendanceRecords");
 
       // Write and download
@@ -69,6 +90,35 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
       xlsx.writeFile(wb, `KKN_Backup_Sistem_${today}.xlsx`);
     } catch (err: any) {
       alert(err.message || "Terjadi kesalahan saat memproses backup.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExportJsonBackup = async () => {
+    setLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/admin/backup', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Gagal mengekspor backup.');
+      }
+
+      const data = await res.json();
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().split('T')[0];
+      a.href = url;
+      a.download = `KKN_Backup_Sistem_Full_${today}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || "Terjadi kesalahan saat memproses backup JSON.");
     } finally {
       setLoading(false);
     }
@@ -89,92 +139,117 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
     e.stopPropagation();
     setIsDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processBackupExcel(e.dataTransfer.files[0]);
+      processBackupFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    processBackupExcel(file);
+    processBackupFile(file);
   };
 
-  const processBackupExcel = (file: File) => {
+  const processBackupFile = (file: File) => {
     setRestoreFile(file);
     setRestoreError(null);
     setRestoreSuccess(null);
     setRestoreData(null);
 
+    const isJson = file.name.toLowerCase().endsWith('.json') || file.type === 'application/json';
     const reader = new FileReader();
+
     reader.onload = (evt) => {
       try {
-        const buffer = evt.target?.result as ArrayBuffer;
-        if (!buffer) {
-          setRestoreError("Gagal membaca file. File kosong atau tidak valid.");
-          return;
+        let finalRestoreData: any = null;
+
+        if (isJson) {
+          const text = evt.target?.result as string;
+          if (!text) {
+            setRestoreError("Gagal membaca file. File kosong atau tidak valid.");
+            return;
+          }
+          const data = JSON.parse(text);
+          finalRestoreData = {
+            users: Array.isArray(data.users) ? data.users : [],
+            transactions: Array.isArray(data.transactions) ? data.transactions : [],
+            tasks: Array.isArray(data.tasks) ? data.tasks : [],
+            events: Array.isArray(data.events) ? data.events : [],
+            logs: Array.isArray(data.logs) ? data.logs : [],
+            transactionLogs: Array.isArray(data.transactionLogs) ? data.transactionLogs : [],
+            attendanceSessions: Array.isArray(data.attendanceSessions) ? data.attendanceSessions : [],
+            attendanceRecords: Array.isArray(data.attendanceRecords) ? data.attendanceRecords : []
+          };
+        } else {
+          const buffer = evt.target?.result as ArrayBuffer;
+          if (!buffer) {
+            setRestoreError("Gagal membaca file. File kosong atau tidak valid.");
+            return;
+          }
+
+          const wb = xlsx.read(buffer, { type: 'array' });
+          const sheetMap: Record<string, any[]> = {};
+
+          wb.SheetNames.forEach(sheetName => {
+            const lowerName = sheetName.trim().toLowerCase();
+            const ws = wb.Sheets[sheetName];
+            const rows = xlsx.utils.sheet_to_json<any>(ws);
+
+            if (lowerName === 'users' || lowerName === 'user' || lowerName === 'pengguna') {
+              sheetMap["Users"] = rows;
+            } else if (lowerName === 'transactions' || lowerName === 'transaction' || lowerName === 'transaksi') {
+              sheetMap["Transactions"] = rows;
+            } else if (lowerName === 'tasks' || lowerName === 'task' || lowerName === 'tugas') {
+              sheetMap["Tasks"] = rows;
+            } else if (lowerName === 'events' || lowerName === 'event' || lowerName === 'jadwal' || lowerName === 'kegiatan') {
+              sheetMap["Events"] = rows;
+            } else if (lowerName === 'logs' || lowerName === 'log' || lowerName === 'logaktivitas') {
+              sheetMap["Logs"] = rows;
+            } else if (lowerName === 'transactionlogs' || lowerName === 'transaction_logs' || lowerName === 'logtransaksi') {
+              sheetMap["TransactionLogs"] = rows;
+            } else if (lowerName === 'attendancesessions' || lowerName === 'attendance_sessions' || lowerName === 'sesiabsensi') {
+              sheetMap["AttendanceSessions"] = rows;
+            } else if (lowerName === 'attendancerecords' || lowerName === 'attendance_records' || lowerName === 'catatanabsensi') {
+              sheetMap["AttendanceRecords"] = rows;
+            }
+          });
+
+          finalRestoreData = {
+            users: sheetMap["Users"] || [],
+            transactions: sheetMap["Transactions"] || [],
+            tasks: sheetMap["Tasks"] || [],
+            events: sheetMap["Events"] || [],
+            logs: sheetMap["Logs"] || [],
+            transactionLogs: sheetMap["TransactionLogs"] || [],
+            attendanceSessions: sheetMap["AttendanceSessions"] || [],
+            attendanceRecords: sheetMap["AttendanceRecords"] || []
+          };
         }
 
-        const wb = xlsx.read(buffer, { type: 'array' });
-        
-        // Read sheets case-insensitively
-        const sheetMap: Record<string, any[]> = {};
-
-        wb.SheetNames.forEach(sheetName => {
-          const lowerName = sheetName.trim().toLowerCase();
-          const ws = wb.Sheets[sheetName];
-          const rows = xlsx.utils.sheet_to_json<any>(ws);
-
-          if (lowerName === 'users' || lowerName === 'user' || lowerName === 'pengguna') {
-            sheetMap["Users"] = rows;
-          } else if (lowerName === 'transactions' || lowerName === 'transaction' || lowerName === 'transaksi') {
-            sheetMap["Transactions"] = rows;
-          } else if (lowerName === 'tasks' || lowerName === 'task' || lowerName === 'tugas') {
-            sheetMap["Tasks"] = rows;
-          } else if (lowerName === 'events' || lowerName === 'event' || lowerName === 'jadwal' || lowerName === 'kegiatan') {
-            sheetMap["Events"] = rows;
-          } else if (lowerName === 'logs' || lowerName === 'log' || lowerName === 'logaktivitas') {
-            sheetMap["Logs"] = rows;
-          } else if (lowerName === 'transactionlogs' || lowerName === 'transaction_logs' || lowerName === 'logtransaksi') {
-            sheetMap["TransactionLogs"] = rows;
-          } else if (lowerName === 'attendancesessions' || lowerName === 'attendance_sessions' || lowerName === 'sesiabsensi') {
-            sheetMap["AttendanceSessions"] = rows;
-          } else if (lowerName === 'attendancerecords' || lowerName === 'attendance_records' || lowerName === 'catatanabsensi') {
-            sheetMap["AttendanceRecords"] = rows;
-          }
-        });
-
-        if (!sheetMap["Users"] || sheetMap["Users"].length === 0) {
-          setRestoreError("Format file backup tidak valid. Sheet 'Users' (atau 'Pengguna') wajib ada dan memiliki data.");
+        if (!finalRestoreData.users || finalRestoreData.users.length === 0) {
+          setRestoreError("Format file backup tidak valid. Data 'Users' (atau 'Pengguna') wajib ada dan tidak boleh kosong.");
           return;
         }
 
         // Validate admin presence in backup users
-        const usersList = sheetMap["Users"];
+        const usersList = finalRestoreData.users;
         const hasAdmin = usersList.some((u: any) => String(u.nim || '').trim() === '223125416');
         if (!hasAdmin) {
           setRestoreError("File backup tidak mengandung akun Admin utama dengan NIM 223125416. Restore dilarang demi mencegah lock-out.");
           return;
         }
 
-        // Build data structure
-        const finalRestoreData = {
-          users: sheetMap["Users"] || [],
-          transactions: sheetMap["Transactions"] || [],
-          tasks: sheetMap["Tasks"] || [],
-          events: sheetMap["Events"] || [],
-          logs: sheetMap["Logs"] || [],
-          transactionLogs: sheetMap["TransactionLogs"] || [],
-          attendanceSessions: sheetMap["AttendanceSessions"] || [],
-          attendanceRecords: sheetMap["AttendanceRecords"] || []
-        };
-
         setRestoreData(finalRestoreData);
       } catch (err: any) {
-        console.error("Excel parse error:", err);
-        setRestoreError(`Gagal membaca file Excel (${err?.message || 'Format tidak valid'}). Pastikan file tidak rusak.`);
+        console.error("Backup parse error:", err);
+        setRestoreError(`Gagal membaca file backup (${err?.message || 'Format tidak valid'}). Pastikan file tidak rusak.`);
       }
     };
-    reader.readAsArrayBuffer(file);
+
+    if (isJson) {
+      reader.readAsText(file);
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
   };
 
   const handleExecuteRestore = () => {
@@ -267,14 +342,25 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
             </div>
           </div>
 
-          <button
-            onClick={handleExportBackup}
-            disabled={loading}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2"
-          >
-            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Unduh File Backup Excel
-          </button>
+          <div className="space-y-2.5">
+            <button
+              onClick={handleExportBackup}
+              disabled={loading}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+              Unduh Backup Excel (.xlsx)
+            </button>
+
+            <button
+              onClick={handleExportJsonBackup}
+              disabled={loading}
+              className="w-full bg-slate-800 hover:bg-slate-900 disabled:bg-gray-300 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              Unduh Backup Full JSON (Lengkap Dengan Foto)
+            </button>
+          </div>
         </div>
 
         {/* Right Card: Restore */}
@@ -287,7 +373,7 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-900 text-lg">Restore & Sinkronisasi</h3>
-                  <p className="text-xs text-gray-500">Gabungkan dan lengkapi data sistem dari file backup Excel.</p>
+                  <p className="text-xs text-gray-500">Gabungkan dan lengkapi data sistem dari file backup Excel atau JSON.</p>
                 </div>
               </div>
               <span className="bg-emerald-50 text-emerald-700 font-bold px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wide border border-emerald-100 flex items-center gap-1">
@@ -361,7 +447,7 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
                   type="file" 
                   id="restore-file-uploader" 
                   className="hidden" 
-                  accept=".xlsx, .xls" 
+                  accept=".xlsx, .xls, .json" 
                   onChange={handleFileChange} 
                 />
                 
@@ -376,8 +462,8 @@ export function BackupRestoreView({ getToken }: BackupRestoreViewProps) {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold text-gray-900">Seret & letakkan file backup Excel Anda di sini</p>
-                    <p className="text-xs text-gray-500">atau klik untuk menelusuri komputer (.xlsx, .xls)</p>
+                    <p className="text-sm font-semibold text-gray-900">Seret & letakkan file backup Excel / JSON Anda di sini</p>
+                    <p className="text-xs text-gray-500">atau klik untuk menelusuri komputer (.xlsx, .xls, .json)</p>
                   </div>
                 )}
               </div>
