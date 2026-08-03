@@ -2423,9 +2423,9 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   <div className="bg-amber-50 border border-amber-200/90 text-amber-900 p-3 rounded-2xl text-xs flex items-start gap-2.5 text-left shadow-xs">
                     <Camera className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <div>
-                      <span className="font-extrabold block text-amber-950 text-[12px]">⚠️ Wajib Selfie di Posko KKN</span>
+                      <span className="font-extrabold block text-amber-950 text-[12px]">⚠️ Wajib Selfie di Area Desa Kandangan</span>
                       <p className="text-[11px] text-amber-800 leading-snug mt-0.5">
-                        Ambil foto selfie di <strong>depan Posko KKN</strong> dengan memperlihatkan <strong>Banner Posko KKN</strong> sebagai bukti keberadaan.
+                        Ambil foto selfie di wilayah <strong>Desa Kandangan, Kec. Senduro, Kab. Lumajang</strong> dengan memperlihatkan <strong>Banner Posko KKN</strong> sebagai bukti keberadaan.
                       </p>
                     </div>
                   </div>

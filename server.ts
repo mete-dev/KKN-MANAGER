@@ -937,7 +937,7 @@ app.use(express.json());
 
   const POSKO_LAT = -8.066722;
   const POSKO_LNG = 113.08875;
-  const MAX_POSKO_RADIUS_METERS = 500;
+  const MAX_POSKO_RADIUS_METERS = 5000; // Expanded to cover Desa Kandangan, Kec. Senduro, Kab. Lumajang
 
   function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371000;
@@ -978,7 +978,7 @@ app.use(express.json());
 
       const isDailyAttendance = upperParamId.includes('CHECKIN') || upperParamId.includes('CHECKOUT');
 
-      // Mandatory location (Geofence Posko 500m) & photo check ONLY for Absen Harian (unless super admin bypass)
+      // Mandatory location (Geofence area Desa Kandangan, Senduro, Lumajang) & photo check ONLY for Absen Harian (unless super admin bypass)
       if (isDailyAttendance && !isSuperAdminBypass) {
         if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
           return res.status(400).json({
@@ -993,7 +993,7 @@ app.use(express.json());
         const distMeters = calculateDistanceMeters(POSKO_LAT, POSKO_LNG, location.lat, location.lng);
         if (distMeters > MAX_POSKO_RADIUS_METERS) {
           return res.status(400).json({
-            error: "Presensi Harian Gagal: Anda berada di luar area Posko KKN (lebih dari 500 meter). Silakan lakukan presensi harian di sekitar area Posko KKN."
+            error: "Presensi Harian Gagal: Anda berada di luar wilayah Desa Kandangan, Kecamatan Senduro, Kabupaten Lumajang."
           });
         }
       }
