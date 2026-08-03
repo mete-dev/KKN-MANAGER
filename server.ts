@@ -993,7 +993,7 @@ app.use(express.json());
         const distMeters = calculateDistanceMeters(POSKO_LAT, POSKO_LNG, location.lat, location.lng);
         if (distMeters > MAX_POSKO_RADIUS_METERS) {
           return res.status(400).json({
-            error: "Presensi Harian Gagal: Anda berada di luar wilayah Desa Kandangan, Kecamatan Senduro, Kabupaten Lumajang."
+            error: "Presensi Harian Gagal: Anda berada di luar area Posko KKN Desa Kandangan, Kecamatan Senduro, Kabupaten Lumajang."
           });
         }
       }
