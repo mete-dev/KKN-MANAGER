@@ -22,7 +22,7 @@ export function FinanceView({ transactions, setTransactions, getToken }: Props) 
 
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }));
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [activeTab, setActiveTab] = useState<'kas' | 'proker' | 'konsumsi'>('kas');
   const [proofLink, setProofLink] = useState('');

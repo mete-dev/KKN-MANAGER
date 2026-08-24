@@ -53847,6 +53847,8 @@ var users = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default("Anggota"),
   permissions: text("permissions").default('{"participants":"r","finance":"r","tasks":"r","calendar":"r","attendance":"r"}'),
+  stayType: text("stay_type").default("pp"),
+  // 'stay' | 'pp'
   createdAt: timestamp("created_at").defaultNow()
 });
 var transactions = pgTable("transactions", {
@@ -63695,11 +63697,26 @@ function withTimeout(promise, ms = QUERY_TIMEOUT_MS) {
   ]);
 }
 async function repositoryGetUsers() {
+  const parseUserStayType = (u) => {
+    let stayFromPerms = null;
+    try {
+      if (u.permissions) {
+        const p = typeof u.permissions === "string" ? JSON.parse(u.permissions) : u.permissions;
+        if (p && p.stayType) stayFromPerms = p.stayType;
+      }
+    } catch (e) {
+    }
+    return u.stay_type || u.stayType || stayFromPerms || "pp";
+  };
   if (isSupabaseConfigured()) {
     try {
       const { data, error } = await getSupabase().from("users").select("*");
       if (!error && data) {
-        if (data.length > 0) memoryStore.users = data;
+        const mapped = data.map((u) => ({
+          ...u,
+          stayType: parseUserStayType(u)
+        }));
+        if (mapped.length > 0) memoryStore.users = mapped;
         return memoryStore.users;
       }
     } catch (e) {
@@ -63707,12 +63724,12 @@ async function repositoryGetUsers() {
     }
   }
   if (!isPostgresConfigured()) {
-    return memoryStore.users;
+    return memoryStore.users.map((u) => ({ ...u, stayType: parseUserStayType(u) }));
   }
   try {
     const res = await withTimeout(db.select().from(users));
     if (res && res.length > 0) {
-      memoryStore.users = res;
+      memoryStore.users = res.map((u) => ({ ...u, stayType: parseUserStayType(u) }));
     }
     return memoryStore.users;
   } catch (e) {
@@ -63736,6 +63753,15 @@ async function repositoryFindUserByPhoneOrNim(phoneOrNim) {
   }) || null;
 }
 async function repositoryInsertUser(userData) {
+  const stayVal = userData.stayType || userData.stay_type || "pp";
+  let permsObj = {};
+  try {
+    permsObj = typeof userData.permissions === "string" ? JSON.parse(userData.permissions) : userData.permissions || {};
+  } catch (e) {
+    permsObj = {};
+  }
+  permsObj.stayType = stayVal;
+  const finalPerms = JSON.stringify(permsObj);
   const userItem = {
     id: userData.id || v4_default(),
     nim: userData.nim || "",
@@ -63744,7 +63770,8 @@ async function repositoryInsertUser(userData) {
     name: userData.name || "",
     email: userData.email || "",
     role: userData.role || "Anggota",
-    permissions: userData.permissions || DEFAULT_PERMS,
+    permissions: finalPerms,
+    stayType: stayVal,
     createdAt: userData.createdAt || (/* @__PURE__ */ new Date()).toISOString()
   };
   const existingIdx = memoryStore.users.findIndex((u) => u.id === userItem.id);
@@ -63755,34 +63782,84 @@ async function repositoryInsertUser(userData) {
   }
   if (isSupabaseConfigured()) {
     try {
-      await getSupabase().from("users").upsert([userItem]);
+      const { error } = await getSupabase().from("users").upsert([{
+        id: userItem.id,
+        nim: userItem.nim,
+        phone: userItem.phone,
+        password: userItem.password,
+        name: userItem.name,
+        email: userItem.email,
+        role: userItem.role,
+        permissions: userItem.permissions,
+        stay_type: userItem.stayType,
+        created_at: userItem.createdAt
+      }]);
+      if (error && error.message && error.message.includes("stay_type")) {
+        await getSupabase().from("users").upsert([{
+          id: userItem.id,
+          nim: userItem.nim,
+          phone: userItem.phone,
+          password: userItem.password,
+          name: userItem.name,
+          email: userItem.email,
+          role: userItem.role,
+          permissions: userItem.permissions,
+          created_at: userItem.createdAt
+        }]);
+      }
     } catch (e) {
     }
   }
   try {
     const inserted = await withTimeout(db.insert(users).values(userItem).returning());
-    if (inserted && inserted[0]) return inserted[0];
+    if (inserted && inserted[0]) return { ...inserted[0], stayType: stayVal };
   } catch (e) {
   }
   return userItem;
 }
 async function repositoryUpdateUser(id, updateData) {
+  const stayVal = updateData.stayType !== void 0 ? updateData.stayType : updateData.stay_type;
+  let permsObj = {};
+  try {
+    permsObj = typeof updateData.permissions === "string" ? JSON.parse(updateData.permissions) : updateData.permissions || {};
+  } catch (e) {
+    permsObj = {};
+  }
+  if (stayVal) {
+    permsObj.stayType = stayVal;
+    updateData.permissions = JSON.stringify(permsObj);
+  }
   const idx = memoryStore.users.findIndex((u) => u.id === id);
   if (idx >= 0) {
-    memoryStore.users[idx] = { ...memoryStore.users[idx], ...updateData };
+    memoryStore.users[idx] = {
+      ...memoryStore.users[idx],
+      ...updateData,
+      stayType: stayVal || memoryStore.users[idx].stayType || "pp"
+    };
   }
   if (isSupabaseConfigured()) {
     try {
-      await getSupabase().from("users").update(updateData).eq("id", id);
+      const dbUpdate = { ...updateData };
+      if (stayVal) {
+        dbUpdate.stay_type = stayVal;
+      }
+      delete dbUpdate.stayType;
+      const { error } = await getSupabase().from("users").update(dbUpdate).eq("id", id);
+      if (error && error.message && error.message.includes("stay_type")) {
+        delete dbUpdate.stay_type;
+        await getSupabase().from("users").update(dbUpdate).eq("id", id);
+      }
     } catch (e) {
     }
   }
   try {
-    const updated = await withTimeout(db.update(users).set(updateData).where(eq(users.id, id)).returning());
-    if (updated && updated[0]) return updated[0];
+    const dbUpdateData = { ...updateData };
+    delete dbUpdateData.stayType;
+    const updated = await withTimeout(db.update(users).set(dbUpdateData).where(eq(users.id, id)).returning());
+    if (updated && updated[0]) return { ...updated[0], stayType: stayVal || "pp" };
   } catch (e) {
   }
-  return memoryStore.users[idx] || updateData;
+  return memoryStore.users[idx] || { ...updateData, stayType: stayVal || "pp" };
 }
 async function repositoryDeleteUser(id) {
   memoryStore.users = memoryStore.users.filter((u) => u.id !== id);
@@ -64057,22 +64134,38 @@ async function repositoryInsertLog(logData) {
 async function repositoryGetAttendanceSessions() {
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await getSupabase().from("attendance_sessions").select("*");
-      if (!error && data) {
-        memoryStore.attendanceSessions = data.map((s) => ({
-          ...s,
-          sessionType: s.session_type || s.sessionType || "event",
-          isPermanent: s.is_permanent ?? s.isPermanent ?? 0,
-          createdBy: s.created_by || s.createdBy
-        }));
-        return memoryStore.attendanceSessions;
+      const { data, error } = await getSupabase().from("attendance_sessions").select("*").limit(1e4);
+      if (!error && data && data.length > 0) {
+        data.forEach((s) => {
+          const mapped = {
+            ...s,
+            sessionType: s.session_type || s.sessionType || "event",
+            isPermanent: s.is_permanent ?? s.isPermanent ?? 0,
+            createdBy: s.created_by || s.createdBy
+          };
+          const idx = memoryStore.attendanceSessions.findIndex((item) => item.id === mapped.id);
+          if (idx >= 0) {
+            memoryStore.attendanceSessions[idx] = { ...memoryStore.attendanceSessions[idx], ...mapped };
+          } else {
+            memoryStore.attendanceSessions.push(mapped);
+          }
+        });
       }
     } catch (e) {
     }
   }
   try {
     const res = await withTimeout(db.select().from(attendanceSessions));
-    if (res) memoryStore.attendanceSessions = res;
+    if (res && res.length > 0) {
+      res.forEach((s) => {
+        const idx = memoryStore.attendanceSessions.findIndex((item) => item.id === s.id);
+        if (idx >= 0) {
+          memoryStore.attendanceSessions[idx] = { ...memoryStore.attendanceSessions[idx], ...s };
+        } else {
+          memoryStore.attendanceSessions.push(s);
+        }
+      });
+    }
   } catch (e) {
   }
   return memoryStore.attendanceSessions;
@@ -64114,10 +64207,12 @@ async function repositoryGetAttendanceRecords(sessionId) {
     try {
       let query = getSupabase().from("attendance_records").select("*");
       if (sessionId) {
-        query = query.eq("session_id", sessionId);
+        query = query.eq("session_id", sessionId).limit(5e3);
+      } else {
+        query = query.limit(5e4);
       }
       const { data, error } = await query;
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         const mapped = data.map((r) => ({
           ...r,
           sessionId: r.session_id || r.sessionId,
@@ -64125,13 +64220,14 @@ async function repositoryGetAttendanceRecords(sessionId) {
           checkInTime: r.check_in_time || r.checkInTime || "-",
           checkOutTime: r.check_out_time || r.checkOutTime || "-"
         }));
-        if (sessionId) {
-          memoryStore.attendanceRecords = memoryStore.attendanceRecords.filter((r) => r.sessionId !== sessionId).concat(mapped);
-          return mapped;
-        } else {
-          memoryStore.attendanceRecords = mapped;
-          return memoryStore.attendanceRecords;
-        }
+        mapped.forEach((m) => {
+          const idx = memoryStore.attendanceRecords.findIndex((r) => r.id === m.id);
+          if (idx >= 0) {
+            memoryStore.attendanceRecords[idx] = { ...memoryStore.attendanceRecords[idx], ...m };
+          } else {
+            memoryStore.attendanceRecords.push(m);
+          }
+        });
       }
     } catch (e) {
     }
@@ -64143,13 +64239,15 @@ async function repositoryGetAttendanceRecords(sessionId) {
     } else {
       res = await withTimeout(db.select().from(attendanceRecords));
     }
-    if (res) {
-      if (sessionId) {
-        memoryStore.attendanceRecords = memoryStore.attendanceRecords.filter((r) => r.sessionId !== sessionId).concat(res);
-        return res;
-      } else {
-        memoryStore.attendanceRecords = res;
-      }
+    if (res && res.length > 0) {
+      res.forEach((m) => {
+        const idx = memoryStore.attendanceRecords.findIndex((r) => r.id === m.id);
+        if (idx >= 0) {
+          memoryStore.attendanceRecords[idx] = { ...memoryStore.attendanceRecords[idx], ...m };
+        } else {
+          memoryStore.attendanceRecords.push(m);
+        }
+      });
     }
   } catch (e) {
   }
@@ -64222,32 +64320,48 @@ async function repositoryBatchRestore(data) {
   const backupLogs = Array.isArray(data.logs) ? data.logs : [];
   const backupAttendanceSessions = Array.isArray(data.attendanceSessions) ? data.attendanceSessions : [];
   const backupAttendanceRecords = Array.isArray(data.attendanceRecords) ? data.attendanceRecords : [];
-  const upsertList = (storeList, newItems) => {
+  const upsertListWithKey = (storeList, newItems, keyFn) => {
     const itemMap = /* @__PURE__ */ new Map();
     for (const item of storeList) {
-      if (item.id) itemMap.set(String(item.id), item);
+      const key = keyFn(item);
+      if (key) itemMap.set(key, item);
     }
     for (const item of newItems) {
-      if (item.id) {
-        const id = String(item.id);
-        const existing = itemMap.get(id) || {};
-        itemMap.set(id, { ...existing, ...item });
+      const key = keyFn(item);
+      if (key) {
+        const existing = itemMap.get(key) || {};
+        itemMap.set(key, { ...existing, ...item });
       }
     }
     return Array.from(itemMap.values());
   };
-  const formattedUsers = backupUsers.map((u) => ({
-    id: String(u.id || v4_default()),
-    nim: String(u.nim || ""),
-    phone: String(u.phone || ""),
-    password: u.password || DEFAULT_PASS_HASH,
-    name: String(u.name || "Anggota"),
-    email: String(u.email || ""),
-    role: String(u.role || "Anggota"),
-    permissions: typeof u.permissions === "object" ? JSON.stringify(u.permissions) : String(u.permissions || DEFAULT_PERMS),
-    createdAt: u.createdAt || u.created_at || (/* @__PURE__ */ new Date()).toISOString()
-  }));
-  memoryStore.users = upsertList(memoryStore.users, formattedUsers);
+  const formattedUsers = backupUsers.map((u) => {
+    let stayType = u.stayType || u.stay_type || null;
+    if (!stayType && u.permissions) {
+      try {
+        const p = typeof u.permissions === "string" ? JSON.parse(u.permissions) : u.permissions;
+        if (p && p.stayType) stayType = p.stayType;
+      } catch (e) {
+      }
+    }
+    return {
+      id: String(u.id || v4_default()),
+      nim: String(u.nim || ""),
+      phone: String(u.phone || ""),
+      password: u.password || DEFAULT_PASS_HASH,
+      name: String(u.name || "Anggota"),
+      email: String(u.email || ""),
+      role: String(u.role || "Anggota"),
+      stayType: stayType || "pp",
+      permissions: typeof u.permissions === "object" ? JSON.stringify(u.permissions) : String(u.permissions || DEFAULT_PERMS),
+      createdAt: u.createdAt || u.created_at || (/* @__PURE__ */ new Date()).toISOString()
+    };
+  });
+  memoryStore.users = upsertListWithKey(
+    memoryStore.users,
+    formattedUsers,
+    (u) => String(u.id || u.nim || u.phone || u.name)
+  );
   const formattedTransactions = backupTransactions.map((t) => ({
     id: String(t.id || v4_default()),
     userId: String(t.userId || t.user_id || ""),
@@ -64260,7 +64374,11 @@ async function repositoryBatchRestore(data) {
     status: String(t.status || "active"),
     createdAt: t.createdAt || t.created_at || (/* @__PURE__ */ new Date()).toISOString()
   }));
-  memoryStore.transactions = upsertList(memoryStore.transactions, formattedTransactions);
+  memoryStore.transactions = upsertListWithKey(
+    memoryStore.transactions,
+    formattedTransactions,
+    (t) => String(t.id)
+  );
   const formattedTasks = backupTasks.map((tk) => ({
     id: String(tk.id || v4_default()),
     userId: String(tk.userId || tk.user_id || ""),
@@ -64275,7 +64393,11 @@ async function repositoryBatchRestore(data) {
     referenceLink: tk.referenceLink || tk.reference_link ? String(tk.referenceLink || tk.reference_link) : null,
     createdAt: tk.createdAt || tk.created_at || (/* @__PURE__ */ new Date()).toISOString()
   }));
-  memoryStore.tasks = upsertList(memoryStore.tasks, formattedTasks);
+  memoryStore.tasks = upsertListWithKey(
+    memoryStore.tasks,
+    formattedTasks,
+    (tk) => String(tk.id)
+  );
   const formattedEvents = backupEvents.map((ev) => ({
     id: String(ev.id || v4_default()),
     userId: String(ev.userId || ev.user_id || ""),
@@ -64286,7 +64408,11 @@ async function repositoryBatchRestore(data) {
     category: String(ev.category || "other"),
     createdAt: ev.createdAt || ev.created_at || (/* @__PURE__ */ new Date()).toISOString()
   }));
-  memoryStore.events = upsertList(memoryStore.events, formattedEvents);
+  memoryStore.events = upsertListWithKey(
+    memoryStore.events,
+    formattedEvents,
+    (ev) => String(ev.id || `${ev.title}_${ev.date}`)
+  );
   const formattedLogs = backupLogs.map((l) => ({
     id: String(l.id || v4_default()),
     userId: String(l.userId || l.user_id || ""),
@@ -64294,29 +64420,42 @@ async function repositoryBatchRestore(data) {
     details: l.details ? String(l.details) : null,
     createdAt: l.createdAt || l.created_at || (/* @__PURE__ */ new Date()).toISOString()
   }));
-  memoryStore.logs = upsertList(memoryStore.logs, formattedLogs);
+  memoryStore.logs = upsertListWithKey(
+    memoryStore.logs,
+    formattedLogs,
+    (l) => String(l.id)
+  );
   const formattedSessions = backupAttendanceSessions.map((s) => ({
     id: String(s.id || v4_default()),
     title: String(s.title || "Absensi"),
     date: String(s.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0]),
+    sessionType: String(s.sessionType || s.session_type || "event"),
     notes: s.notes ? String(s.notes) : null,
     isPermanent: Number(s.isPermanent ?? s.is_permanent ?? 0),
     createdBy: String(s.createdBy || s.created_by || ""),
     createdAt: s.createdAt || s.created_at || (/* @__PURE__ */ new Date()).toISOString()
   }));
-  memoryStore.attendanceSessions = upsertList(memoryStore.attendanceSessions, formattedSessions);
+  memoryStore.attendanceSessions = upsertListWithKey(
+    memoryStore.attendanceSessions,
+    formattedSessions,
+    (s) => String(s.id || `${s.title}_${s.date}`)
+  );
   const formattedRecords = backupAttendanceRecords.map((r) => ({
     id: String(r.id || v4_default()),
     sessionId: String(r.sessionId || r.session_id || ""),
     userId: r.userId || r.user_id ? String(r.userId || r.user_id) : null,
     name: String(r.name || "Anggota"),
     status: String(r.status || "Hadir"),
-    checkInTime: r.checkInTime || r.check_in_time || null,
-    checkOutTime: r.checkOutTime || r.check_out_time || null,
+    checkInTime: r.checkInTime || r.check_in_time || "-",
+    checkOutTime: r.checkOutTime || r.check_out_time || "-",
     notes: r.notes ? String(r.notes) : "",
     createdAt: r.createdAt || r.created_at || (/* @__PURE__ */ new Date()).toISOString()
   }));
-  memoryStore.attendanceRecords = upsertList(memoryStore.attendanceRecords, formattedRecords);
+  memoryStore.attendanceRecords = upsertListWithKey(
+    memoryStore.attendanceRecords,
+    formattedRecords,
+    (r) => String(r.id || `${r.sessionId}_${r.userId || r.name}`)
+  );
   (async () => {
     if (isSupabaseConfigured()) {
       try {
@@ -64329,6 +64468,7 @@ async function repositoryBatchRestore(data) {
             email: u.email,
             name: u.name,
             role: u.role,
+            stay_type: u.stayType,
             permissions: u.permissions,
             created_at: u.createdAt
           }));
@@ -64571,7 +64711,8 @@ app.get("/api/participants", requireAuth, async (req, res) => {
       role: u.role,
       contact: u.phone,
       email: u.email,
-      permissions: u.permissions
+      permissions: u.permissions,
+      stayType: u.stayType || "pp"
     }));
     res.json(mapped);
   } catch (e) {
@@ -64580,7 +64721,7 @@ app.get("/api/participants", requireAuth, async (req, res) => {
 });
 app.post("/api/participants", requireAuth, async (req, res) => {
   try {
-    const { nim, name, phone, email, role, permissions, password } = req.body;
+    const { nim, name, phone, email, role, permissions, password, stayType } = req.body;
     const phoneDigits = String(phone || "").replace(/\D/g, "");
     const pwdToHash = password && password.trim() !== "" ? password : phoneDigits.slice(-6) || "486908";
     const hashedPassword = await bcryptjs_default.hash(pwdToHash, 10);
@@ -64593,10 +64734,11 @@ app.post("/api/participants", requireAuth, async (req, res) => {
       email,
       role: role || "Anggota",
       password: hashedPassword,
-      permissions
+      permissions,
+      stayType: stayType || "pp"
     });
-    await logActivity(req.user.id, "Menambah Peserta", `Menambahkan peserta: ${name}`);
-    res.json({ id: newUser.id, nim: newUser.nim, name: newUser.name, role: newUser.role, contact: newUser.phone, email: newUser.email, permissions: newUser.permissions });
+    await logActivity(req.user.id, "Menambah Peserta", `Menambahkan peserta: ${name} (${stayType === "stay" ? "Stay Posko" : "PP"})`);
+    res.json({ id: newUser.id, nim: newUser.nim, name: newUser.name, role: newUser.role, contact: newUser.phone, email: newUser.email, permissions: newUser.permissions, stayType: newUser.stayType || "pp" });
   } catch (e) {
     res.status(500).json({ error: "Gagal menambah peserta." });
   }
@@ -64612,7 +64754,7 @@ app.post("/api/participants/bulk", requireAuth, async (req, res) => {
     let successCount = 0;
     let failCount = 0;
     for (const item of list) {
-      const { nim, name, phone, email, role, password, permissions } = item;
+      const { nim, name, phone, email, role, password, permissions, stayType } = item;
       if (!phone || !name) {
         results.push({ name: name || "Tanpa Nama", phone: phone || "Tanpa HP", success: false, error: "Nama dan Nomor WhatsApp wajib diisi." });
         failCount++;
@@ -64637,9 +64779,10 @@ app.post("/api/participants/bulk", requireAuth, async (req, res) => {
         email: email ? String(email).trim() : "",
         role: role ? String(role).trim() : "Anggota",
         password: hashedPassword,
-        permissions: permissions ? JSON.stringify(permissions) : defaultPerms
+        permissions: permissions ? JSON.stringify(permissions) : defaultPerms,
+        stayType: stayType || "pp"
       });
-      results.push({ id, nim, name, role, success: true });
+      results.push({ id, nim, name, role, stayType: stayType || "pp", success: true });
       successCount++;
     }
     if (successCount > 0) {
@@ -64652,14 +64795,14 @@ app.post("/api/participants/bulk", requireAuth, async (req, res) => {
 });
 app.put("/api/participants/:id", requireAuth, async (req, res) => {
   try {
-    const { nim, name, phone, email, role, permissions, password } = req.body;
-    const updateData = { nim, name, phone, email, role, permissions };
+    const { nim, name, phone, email, role, permissions, password, stayType } = req.body;
+    const updateData = { nim, name, phone, email, role, permissions, stayType };
     if (password && password.trim() !== "") {
       updateData.password = await bcryptjs_default.hash(password, 10);
     }
     const updatedUser = await repositoryUpdateUser(req.params.id, updateData);
     await logActivity(req.user.id, "Mengubah Peserta", `Mengubah data peserta: ${name}`);
-    res.json({ id: updatedUser.id, nim: updatedUser.nim, name: updatedUser.name, role: updatedUser.role, contact: updatedUser.phone, email: updatedUser.email, permissions: updatedUser.permissions });
+    res.json({ id: updatedUser.id, nim: updatedUser.nim, name: updatedUser.name, role: updatedUser.role, contact: updatedUser.phone, email: updatedUser.email, permissions: updatedUser.permissions, stayType: updatedUser.stayType || "pp" });
   } catch (e) {
     res.status(500).json({ error: "Gagal mengubah peserta." });
   }
@@ -64866,6 +65009,16 @@ var checkAttendanceColumns = async () => {
     }
   } catch (e) {
   }
+  try {
+    const resUserStay = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'stay_type'
+      `);
+    if (resUserStay.rows.length === 0) {
+      await pool.query(`ALTER TABLE users ADD COLUMN stay_type TEXT DEFAULT 'pp'`);
+    }
+  } catch (e) {
+  }
 };
 var parseTimeFromNotes = (notes, tag) => {
   if (!notes) return null;
@@ -64945,15 +65098,70 @@ app.get("/api/attendance/my-status", requireAuth, async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
     const { dateStr } = getWibDateTime();
-    const dailySession = await safeSelectDailySession(dateStr);
+    const allSessions = await repositoryGetAttendanceSessions();
+    const allRecords = await repositoryGetAttendanceRecords();
+    const dailySessions = allSessions.filter((s) => s.sessionType === "daily").sort((a, b) => b.date.localeCompare(a.date));
+    const targetDailySession = dailySessions.find((s) => s.date === dateStr);
     let dailyRecord = null;
-    if (dailySession.length > 0) {
-      const records2 = await safeSelectRecordsBySessionId(dailySession[0].id);
+    if (targetDailySession) {
+      const records2 = allRecords.filter((r) => r.sessionId === targetDailySession.id);
       dailyRecord = records2.find((r) => r.userId === currentUserId) || null;
+    }
+    const currentUser = await repositoryGetUserById(currentUserId);
+    const isStayPosko = currentUser?.stayType === "stay";
+    let dailyResult = {
+      status: "Belum Absen",
+      checkInTime: "-",
+      checkOutTime: "-",
+      notes: ""
+    };
+    if (dailyRecord) {
+      dailyResult = {
+        status: dailyRecord.status || "Belum Absen",
+        checkInTime: dailyRecord.checkInTime || parseTimeFromNotes(dailyRecord.notes, "Check-In") || "-",
+        checkOutTime: dailyRecord.checkOutTime || parseTimeFromNotes(dailyRecord.notes, "Check-Out") || "-",
+        notes: dailyRecord.notes || ""
+      };
+    } else {
+      const previousSessions = dailySessions.filter((s) => s.date < dateStr);
+      for (const prevSess of previousSessions) {
+        const prevRec = allRecords.find((r) => r.sessionId === prevSess.id && r.userId === currentUserId);
+        if (prevRec && prevRec.status) {
+          const st = prevRec.status;
+          if (st === "Sakit" || st === "Izin" || st === "Kerja") {
+            dailyResult = {
+              status: st,
+              checkInTime: "-",
+              checkOutTime: "-",
+              notes: `Lanjutan ${st} sejak ${prevSess.date}`
+            };
+            break;
+          }
+          if (isStayPosko) {
+            if (prevRec.checkOutTime && prevRec.checkOutTime !== "-") {
+              dailyResult = {
+                status: "Belum Absen",
+                checkInTime: "-",
+                checkOutTime: "-",
+                notes: `Keluar Posko sejak ${prevSess.date} (${prevRec.checkOutTime})`
+              };
+            } else if (prevRec.status === "Hadir") {
+              dailyResult = {
+                status: "Hadir",
+                checkInTime: "Stay Posko",
+                checkOutTime: "-",
+                notes: `Stay di Posko (Masuk sejak ${prevSess.date})`
+              };
+            }
+            break;
+          }
+          break;
+        }
+      }
     }
     const sessions = await safeSelectSessions();
     const records = await safeSelectRecords();
-    const userActivityRecords = records.filter((r) => r.userId === currentUserId && (!dailySession[0] || r.sessionId !== dailySession[0].id));
+    const userActivityRecords = records.filter((r) => r.userId === currentUserId && (!targetDailySession || r.sessionId !== targetDailySession.id));
     const activities = userActivityRecords.map((r) => {
       const sess = sessions.find((s) => s.id === r.sessionId);
       return {
@@ -64966,15 +65174,7 @@ app.get("/api/attendance/my-status", requireAuth, async (req, res) => {
       };
     });
     res.json({
-      daily: dailyRecord ? {
-        status: dailyRecord.status || "Belum Absen",
-        checkInTime: dailyRecord.checkInTime || parseTimeFromNotes(dailyRecord.notes, "Check-In") || "-",
-        checkOutTime: dailyRecord.checkOutTime || parseTimeFromNotes(dailyRecord.notes, "Check-Out") || "-"
-      } : {
-        status: "Belum Absen",
-        checkInTime: "-",
-        checkOutTime: "-"
-      },
+      daily: dailyResult,
       activities
     });
   } catch (e) {
@@ -64982,29 +65182,154 @@ app.get("/api/attendance/my-status", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Gagal memuat status kehadiran." });
   }
 });
+app.get("/api/attendance/my-history", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = req.user?.id;
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const currentUser = await repositoryGetUserById(currentUserId);
+    const currentUserName = (currentUser?.name || req.user?.name || "").toLowerCase().trim();
+    const { dateStr } = getWibDateTime();
+    const allSessions = await repositoryGetAttendanceSessions();
+    const allRecords = await repositoryGetAttendanceRecords();
+    const isMyRecord = (r) => {
+      if (r.userId && r.userId === currentUserId) return true;
+      if (currentUserName && r.name && r.name.toLowerCase().trim() === currentUserName) return true;
+      return false;
+    };
+    const datesSet = /* @__PURE__ */ new Set();
+    datesSet.add(dateStr);
+    allSessions.forEach((s) => {
+      if (s.date) datesSet.add(s.date);
+    });
+    allRecords.forEach((r) => {
+      if (isMyRecord(r)) {
+        const sess = allSessions.find((s) => s.id === r.sessionId);
+        if (sess?.date) datesSet.add(sess.date);
+      }
+    });
+    const sortedDates = Array.from(datesSet).sort((a, b) => b.localeCompare(a));
+    const dailySessions = allSessions.filter((s) => s.sessionType === "daily");
+    const activitySessions = allSessions.filter((s) => s.sessionType !== "daily");
+    const dailyHistory = sortedDates.map((dateItem) => {
+      const dSession = dailySessions.find((s) => s.date === dateItem);
+      const dRec = dSession ? allRecords.find((r) => r.sessionId === dSession.id && isMyRecord(r)) : null;
+      const actsOnDate = activitySessions.filter((s) => s.date === dateItem);
+      const userActs = actsOnDate.map((actSess) => {
+        const actRec = allRecords.find((r) => r.sessionId === actSess.id && isMyRecord(r));
+        return {
+          sessionId: actSess.id,
+          sessionTitle: actSess.title,
+          sessionDate: actSess.date,
+          status: actRec?.status || "Belum Absen",
+          checkInTime: actRec?.checkInTime || parseTimeFromNotes(actRec?.notes, "Check-In") || "-",
+          checkOutTime: actRec?.checkOutTime || parseTimeFromNotes(actRec?.notes, "Check-Out") || "-",
+          notes: actRec?.notes || ""
+        };
+      }).filter((a) => a.status !== "Belum Absen" || a.checkInTime !== "-");
+      const poskoStatus = dRec?.status || (dateItem === dateStr ? "Belum Absen" : "-");
+      const checkInPosko = dRec?.checkInTime || parseTimeFromNotes(dRec?.notes, "Check-In") || "-";
+      const checkOutPosko = dRec?.checkOutTime || parseTimeFromNotes(dRec?.notes, "Check-Out") || "-";
+      return {
+        sessionId: dSession?.id || `date-${dateItem}`,
+        date: dateItem,
+        status: poskoStatus,
+        checkInTime: checkInPosko,
+        checkOutTime: checkOutPosko,
+        notes: dRec?.notes || "",
+        activities: userActs
+      };
+    }).filter((item) => {
+      return item.date === dateStr || item.status !== "-" || item.checkInTime !== "-" || item.activities.length > 0;
+    });
+    const allActivitiesHistory = activitySessions.map((actSess) => {
+      const actRec = allRecords.find((r) => r.sessionId === actSess.id && isMyRecord(r));
+      return {
+        sessionId: actSess.id,
+        sessionTitle: actSess.title,
+        sessionDate: actSess.date,
+        status: actRec?.status || "Belum Absen",
+        checkInTime: actRec?.checkInTime || parseTimeFromNotes(actRec?.notes, "Check-In") || "-",
+        checkOutTime: actRec?.checkOutTime || parseTimeFromNotes(actRec?.notes, "Check-Out") || "-",
+        notes: actRec?.notes || ""
+      };
+    }).filter((a) => a.status !== "Belum Absen" || a.checkInTime !== "-");
+    const totalDailyHadir = dailyHistory.filter((d) => d.status === "Hadir" || d.checkInTime !== "-").length;
+    const totalDailyIzin = dailyHistory.filter((d) => d.status === "Izin").length;
+    const totalDailySakit = dailyHistory.filter((d) => d.status === "Sakit").length;
+    const totalDailyKerja = dailyHistory.filter((d) => d.status === "Kerja").length;
+    const totalActivitiesAttended = allActivitiesHistory.filter((a) => a.status === "Hadir" || a.checkInTime !== "-").length;
+    res.json({
+      success: true,
+      user: {
+        id: req.user?.id,
+        name: currentUser?.name || req.user?.name,
+        role: currentUser?.role || req.user?.role,
+        nim: currentUser?.nim || req.user?.nim
+      },
+      dailyHistory,
+      allActivitiesHistory,
+      summary: {
+        totalDailyHadir,
+        totalDailyIzin,
+        totalDailySakit,
+        totalDailyKerja,
+        totalActivitiesAttended,
+        totalRecordedDays: dailyHistory.length
+      }
+    });
+  } catch (e) {
+    console.error("Error fetching my attendance history:", e);
+    res.status(500).json({ error: "Gagal memuat riwayat absensi pribadi." });
+  }
+});
 app.get("/api/attendance/daily-report", requireAuth, async (req, res) => {
   try {
     const { dateStr } = getWibDateTime();
     const targetDate = req.query.date || dateStr;
     const allUsers = await repositoryGetUsers();
-    const dailySession = await safeSelectDailySession(targetDate);
-    let recordsList = [];
-    if (dailySession.length > 0) {
-      recordsList = await safeSelectRecordsBySessionId(dailySession[0].id);
+    const allSessions = await repositoryGetAttendanceSessions();
+    const allRecords = await repositoryGetAttendanceRecords();
+    const dailySessions = allSessions.filter((s) => s.sessionType === "daily" || s.title && s.title.toLowerCase().includes("harian")).sort((a, b) => a.date.localeCompare(b.date));
+    const targetDailySession = dailySessions.find((s) => s.date === targetDate);
+    let targetRecords = [];
+    if (targetDailySession) {
+      targetRecords = await repositoryGetAttendanceRecords(targetDailySession.id);
+    } else {
+      targetRecords = [];
     }
+    const previousDailySessions = dailySessions.filter((s) => s.date < targetDate).sort((a, b) => b.date.localeCompare(a.date));
     const report = allUsers.map((u, idx) => {
-      const rec = recordsList.find((r) => r.userId === u.id);
+      const uNameNorm = (u.name || "").toLowerCase().trim();
+      const directRec = targetRecords.find(
+        (r) => r.userId && r.userId === u.id || uNameNorm && r.name && r.name.toLowerCase().trim() === uNameNorm
+      );
+      if (directRec) {
+        return {
+          no: idx + 1,
+          id: u.id,
+          recordId: directRec.id || null,
+          name: u.name,
+          nim: u.nim || "-",
+          divisi: u.role || "Anggota",
+          checkInTime: directRec.checkInTime || parseTimeFromNotes(directRec.notes, "Check-In") || "-",
+          checkOutTime: directRec.checkOutTime || parseTimeFromNotes(directRec.notes, "Check-Out") || "-",
+          status: directRec.status || "Belum Absen",
+          notes: directRec.notes || ""
+        };
+      }
       return {
         no: idx + 1,
         id: u.id,
-        recordId: rec?.id || null,
+        recordId: null,
         name: u.name,
         nim: u.nim || "-",
         divisi: u.role || "Anggota",
-        checkInTime: rec?.checkInTime || parseTimeFromNotes(rec?.notes, "Check-In") || "-",
-        checkOutTime: rec?.checkOutTime || parseTimeFromNotes(rec?.notes, "Check-Out") || "-",
-        status: rec?.status || "Belum Absen",
-        notes: rec?.notes || ""
+        checkInTime: "-",
+        checkOutTime: "-",
+        status: "Belum Absen",
+        notes: ""
       };
     });
     res.json({
@@ -65050,10 +65375,15 @@ app.put("/api/attendance/daily-report", requireAuth, async (req, res) => {
     } else {
       sessionId = dailySessions[0].id;
     }
-    const existingRecords = (await safeSelectRecordsBySessionId(sessionId)).filter((r) => r.userId === userId);
+    const targetNameNorm = (targetUser.name || "").toLowerCase().trim();
+    const existingRecords = (await safeSelectRecordsBySessionId(sessionId)).filter(
+      (r) => r.userId && r.userId === userId || targetNameNorm && r.name && r.name.toLowerCase().trim() === targetNameNorm
+    );
     if (existingRecords.length > 0) {
       const rec = existingRecords[0];
       await safeUpdateRecord(rec.id, {
+        userId: targetUser.id,
+        name: targetUser.name,
         status: status || rec.status,
         checkInTime: checkInTime !== void 0 ? checkInTime : rec.checkInTime,
         checkOutTime: checkOutTime !== void 0 ? checkOutTime : rec.checkOutTime,
@@ -65084,15 +65414,16 @@ app.put("/api/attendance/daily-report", requireAuth, async (req, res) => {
 app.post("/api/attendance/daily/checkin", requireAuth, async (req, res) => {
   try {
     const { dateStr, timeStr, hour, minute } = getWibDateTime();
-    if (hour > 10 || hour === 10 && minute > 0) {
-      return res.status(400).json({
-        error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
-      });
-    }
     const userId = req.user.id;
     const currentUser = await repositoryGetUserById(userId);
     if (!currentUser) {
       return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+    }
+    const isStayPosko = currentUser.stayType === "stay";
+    if (!isStayPosko && (hour > 9 || hour === 9 && minute > 0)) {
+      return res.status(400).json({
+        error: "Absensi Check-In Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi adalah maksimal jam 09:00 WIB. Jika terlambat atau ada kepentingan lain, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
+      });
     }
     let dailySessions = await safeSelectDailySession(dateStr);
     let sessionId;
@@ -65113,15 +65444,17 @@ app.post("/api/attendance/daily/checkin", requireAuth, async (req, res) => {
     const displayTime = `${timeStr.slice(0, 5)} WIB`;
     if (existingRec.length > 0) {
       const rec = existingRec[0];
-      if (rec.checkInTime && rec.checkInTime !== "-") {
+      if (rec.checkInTime && rec.checkInTime !== "-" && rec.checkInTime !== "Stay" && (!rec.checkOutTime || rec.checkOutTime === "-")) {
         return res.status(400).json({
-          error: `Halo ${currentUser.name}, Anda sudah Check-In hari ini pukul ${rec.checkInTime}.`
+          error: `Halo ${currentUser.name}, Anda saat ini sudah berstatus Check-In di Posko (pukul ${rec.checkInTime}).`
         });
       }
       await safeUpdateRecord(rec.id, {
         status: "Hadir",
         checkInTime: displayTime,
-        notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}`
+        checkOutTime: "-",
+        // Reset checkOut to active in posko
+        notes: rec.notes ? `${rec.notes} | Tiba di Posko ${displayTime}` : `Tiba di Posko ${displayTime}`
       });
     } else {
       await safeInsertRecord({
@@ -65131,10 +65464,11 @@ app.post("/api/attendance/daily/checkin", requireAuth, async (req, res) => {
         name: currentUser.name,
         status: "Hadir",
         checkInTime: displayTime,
+        checkOutTime: "-",
         notes: `Check-In ${displayTime}`
       });
     }
-    await logActivity(currentUser.id, "Check-In Harian", `Check-In harian berhasil pukul ${displayTime}`);
+    await logActivity(currentUser.id, "Check-In Harian", `Check-In harian berhasil pukul ${displayTime} (${isStayPosko ? "Stay Posko" : "PP"})`);
     return res.json({
       success: true,
       message: `Check-In Berhasil! Halo ${currentUser.name}, kehadiran Anda telah dicatat pukul ${displayTime}.`,
@@ -65148,16 +65482,17 @@ app.post("/api/attendance/daily/checkin", requireAuth, async (req, res) => {
 });
 app.post("/api/attendance/daily/checkout", requireAuth, async (req, res) => {
   try {
-    const { dateStr, timeStr, hour, minute } = getWibDateTime();
-    if (hour > 22 || hour === 22 && minute > 0) {
-      return res.status(400).json({
-        error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
-      });
-    }
+    const { dateStr, timeStr, hour } = getWibDateTime();
     const userId = req.user.id;
     const currentUser = await repositoryGetUserById(userId);
     if (!currentUser) {
       return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+    }
+    const isStayPosko = currentUser.stayType === "stay";
+    if (!isStayPosko && hour < 19) {
+      return res.status(400).json({
+        error: "Absensi Check-Out Belum Dibuka: Jam kepulangan harian peserta Pulang-Pergi minimal adalah pukul 19:00 WIB. Jika ada keperluan mendesak/pulang cepat, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
+      });
     }
     let dailySessions = await safeSelectDailySession(dateStr);
     let sessionId;
@@ -65185,7 +65520,7 @@ app.post("/api/attendance/daily/checkout", requireAuth, async (req, res) => {
       }
       await safeUpdateRecord(rec.id, {
         checkOutTime: displayTime,
-        notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}`
+        notes: rec.notes ? `${rec.notes} | Keluar Posko ${displayTime}` : `Keluar Posko ${displayTime}`
       });
     } else {
       await safeInsertRecord({
@@ -65194,11 +65529,12 @@ app.post("/api/attendance/daily/checkout", requireAuth, async (req, res) => {
         userId: currentUser.id,
         name: currentUser.name,
         status: "Hadir",
+        checkInTime: "-",
         checkOutTime: displayTime,
-        notes: `Check-Out ${displayTime}`
+        notes: `Keluar Posko ${displayTime}`
       });
     }
-    await logActivity(currentUser.id, "Check-Out Harian", `Check-Out harian berhasil pukul ${displayTime}`);
+    await logActivity(currentUser.id, "Check-Out Harian", `Check-Out harian berhasil pukul ${displayTime} (${isStayPosko ? "Stay Posko" : "PP"})`);
     return res.json({
       success: true,
       message: `Check-Out Berhasil! Halo ${currentUser.name}, waktu Check-Out Anda telah dicatat pukul ${displayTime}.`,
@@ -65231,6 +65567,10 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
     if (!currentUser) return res.status(404).json({ error: "Pengguna tidak ditemukan." });
     const isSuperAdminBypass = currentUser.phone === "081230486908" || currentUser.nim === "223125416" || (currentUser.role || "").toLowerCase().includes("super admin");
     const parseDailyQrDate = (str) => {
+      const u = str.toUpperCase();
+      if (u === "POSKO_CHECKIN" || u === "POSKO_CHECKOUT" || u === "CHECKIN" || u === "CHECKOUT") {
+        return null;
+      }
       const matchWithDash = str.match(/\d{4}-\d{2}-\d{2}/);
       if (matchWithDash) return matchWithDash[0];
       const match8Digits = str.match(/(\d{4})(\d{2})(\d{2})/);
@@ -65258,15 +65598,16 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
     }
     if (upperParamId.includes("CHECKIN")) {
       const { dateStr, timeStr: timeStr2, hour, minute } = getWibDateTime();
+      const isStayPosko = currentUser.stayType === "stay";
       const embeddedDate = parseDailyQrDate(paramId);
       if (embeddedDate && embeddedDate !== dateStr) {
         return res.status(400).json({
-          error: `Absensi Check-In Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini.`
+          error: `Absensi Check-In Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini / QR Posko Tetap.`
         });
       }
-      if (hour > 10 || hour === 10 && minute > 0) {
+      if (!isStayPosko && (hour > 9 || hour === 9 && minute > 0)) {
         return res.status(400).json({
-          error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
+          error: "Absensi Check-In Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi adalah maksimal jam 09:00 WIB. Jika terlambat atau ada kepentingan lain, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
         });
       }
       let dailySessions = await safeSelectDailySession(dateStr);
@@ -65287,13 +65628,15 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
       const noteTag2 = [gpsStr2, photoStr2].filter(Boolean).join(" ");
       if (existingRec.length > 0) {
         const rec = existingRec[0];
-        if (rec.checkInTime && rec.checkInTime !== "-") {
-          return res.status(400).json({ error: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.` });
+        if (rec.checkInTime && rec.checkInTime !== "-" && rec.checkInTime !== "Stay" && (!rec.checkOutTime || rec.checkOutTime === "-")) {
+          return res.status(400).json({ error: `Halo ${currentUser.name}, Anda saat ini sudah berstatus Check-In di Posko (pukul ${rec.checkInTime}).` });
         }
         await safeUpdateRecord(rec.id, {
           status: "Hadir",
           checkInTime: displayTime2,
-          notes: rec.notes ? [rec.notes, noteTag2].filter(Boolean).join(" | ") : noteTag2
+          checkOutTime: "-",
+          // Reset checkOut so user is active in posko
+          notes: rec.notes ? [rec.notes, `Tiba di Posko ${displayTime2}`, noteTag2].filter(Boolean).join(" | ") : [displayTime2, noteTag2].filter(Boolean).join(" ")
         });
       } else {
         await safeInsertRecord({
@@ -65303,22 +65646,24 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           name: currentUser.name,
           status: "Hadir",
           checkInTime: displayTime2,
+          checkOutTime: "-",
           notes: noteTag2
         });
       }
-      return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime2} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
+      return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime2} dicatat. Status kehadiran aktif di Posko.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
     }
     if (upperParamId.includes("CHECKOUT")) {
-      const { dateStr, timeStr: timeStr2, hour, minute } = getWibDateTime();
+      const { dateStr, timeStr: timeStr2, hour } = getWibDateTime();
+      const isStayPosko = currentUser.stayType === "stay";
       const embeddedDate = parseDailyQrDate(paramId);
       if (embeddedDate && embeddedDate !== dateStr) {
         return res.status(400).json({
-          error: `Absensi Check-Out Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini.`
+          error: `Absensi Check-Out Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini / QR Posko Tetap.`
         });
       }
-      if (hour > 22 || hour === 22 && minute > 0) {
+      if (!isStayPosko && hour < 19) {
         return res.status(400).json({
-          error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
+          error: "Absensi Check-Out Belum Dibuka: Jam kepulangan harian peserta Pulang-Pergi minimal adalah pukul 19:00 WIB. Jika ada keperluan mendesak/pulang cepat, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
         });
       }
       let dailySessions = await safeSelectDailySession(dateStr);
@@ -65344,7 +65689,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         }
         await safeUpdateRecord(rec.id, {
           checkOutTime: displayTime2,
-          notes: rec.notes ? [rec.notes, noteTag2].filter(Boolean).join(" | ") : noteTag2
+          notes: rec.notes ? [rec.notes, `Keluar Posko ${displayTime2}`, noteTag2].filter(Boolean).join(" | ") : noteTag2
         });
       } else {
         await safeInsertRecord({
@@ -65353,6 +65698,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           userId: currentUser.id,
           name: currentUser.name,
           status: "Hadir",
+          checkInTime: "-",
           checkOutTime: displayTime2,
           notes: noteTag2
         });

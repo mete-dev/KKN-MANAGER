@@ -6,6 +6,7 @@ export interface Participant {
   contact: string;
   email?: string;
   permissions?: string;
+  stayType?: 'stay' | 'pp' | string;
 }
 
 export interface User {
@@ -16,6 +17,7 @@ export interface User {
   email: string;
   role: string;
   permissions?: string;
+  stayType?: 'stay' | 'pp' | string;
 }
 
 export interface Transaction {

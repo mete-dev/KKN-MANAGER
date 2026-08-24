@@ -28,6 +28,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
   const [email, setEmail] = useState('');
   const [contact, setContact] = useState('');
   const [role, setRole] = useState('Anggota');
+  const [stayType, setStayType] = useState<'stay' | 'pp'>('pp');
   const [password, setPassword] = useState('');
   const [permissions, setPermissions] = useState({ participants: 'r', finance: 'r', tasks: 'r', calendar: 'r', attendance: 'r' });
   const [loading, setLoading] = useState(false);
@@ -70,12 +71,13 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
       ["3. Nama Lengkap minimal 2 karakter dan tidak boleh angka saja."],
       ["4. No. WhatsApp harus angka saja, contoh: 08123456789 (minimal 9 digit)."],
       ["5. Jabatan wajib diisi dengan peran yang sesuai (contoh: Ketua, Sekretaris, Bendahara, Anggota)."],
-      ["6. Sandi Login opsional (jika kosong, otomatis memakai sandi default '123456')."],
-      ["7. Jangan mengubah susunan kolom di baris nomor 10."],
+      ["6. Tipe Tinggal: isi 'Stay' (Menginap di posko) atau 'PP' (Pulang-Pergi). Default jika kosong adalah PP."],
+      ["7. Sandi Login opsional (jika kosong, otomatis memakai sandi default '123456')."],
+      ["8. Jangan mengubah susunan kolom di baris nomor 11."],
       [],
-      ["NIM", "Nama Lengkap", "No. WhatsApp", "Email", "Jabatan", "Sandi Login"],
-      ["123456789", "Budi Santoso", "081234567890", "budi@univ.ac.id", "Ketua", "budi123"],
-      ["987654321", "Siti Aminah", "089876543210", "siti@univ.ac.id", "Anggota", ""]
+      ["NIM", "Nama Lengkap", "No. WhatsApp", "Email", "Jabatan", "Tipe Tinggal (Stay/PP)", "Sandi Login"],
+      ["123456789", "Budi Santoso", "081234567890", "budi@univ.ac.id", "Ketua", "Stay", "budi123"],
+      ["987654321", "Siti Aminah", "089876543210", "siti@univ.ac.id", "Anggota", "PP", ""]
     ];
 
     const ws = xlsx.utils.aoa_to_sheet(headers);
@@ -87,6 +89,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
       { wch: 18 }, // No. WhatsApp
       { wch: 25 }, // Email
       { wch: 15 }, // Jabatan
+      { wch: 20 }, // Tipe Tinggal
       { wch: 15 }  // Sandi Login
     ];
 
@@ -159,6 +162,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
         const waIdx = headers.findIndex(h => h.includes("whatsapp") || h.includes("wa") || h.includes("telepon") || h.includes("hp") || h.includes("kontak"));
         const emailIdx = headers.findIndex(h => h.includes("email"));
         const jabatanIdx = headers.findIndex(h => h.includes("jabatan") || h.includes("role") || h.includes("posisi"));
+        const stayIdx = headers.findIndex(h => h.includes("tinggal") || h.includes("stay") || h.includes("posko") || h.includes("tipe"));
         const sandiIdx = headers.findIndex(h => h.includes("sandi") || h.includes("password"));
 
         if (namaIdx === -1 || waIdx === -1) {
@@ -181,6 +185,8 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
           const nimVal = nimIdx !== -1 && row[nimIdx] ? String(row[nimIdx]).trim() : '';
           let emailVal = emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : '';
           const roleVal = jabatanIdx !== -1 && row[jabatanIdx] ? String(row[jabatanIdx]).trim() : '';
+          const stayRaw = stayIdx !== -1 && row[stayIdx] ? String(row[stayIdx]).trim().toLowerCase() : 'pp';
+          const stayVal = (stayRaw.includes('stay') || stayRaw.includes('posko') || stayRaw.includes('menginap')) ? 'stay' : 'pp';
           const passVal = sandiIdx !== -1 && row[sandiIdx] ? String(row[sandiIdx]).trim() : '123456';
 
           if (!emailVal && nameVal) {
@@ -229,6 +235,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
             phone: waVal,
             email: emailVal,
             role: roleVal,
+            stayType: stayVal,
             password: passVal,
             errors: rowErrors
           });
@@ -299,6 +306,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
     setEmail('');
     setContact('');
     setRole('Anggota');
+    setStayType('pp');
     setPassword('');
     setPermissions({ participants: 'r', finance: 'r', tasks: 'r', calendar: 'r', attendance: 'r' });
     setIsModalOpen(true);
@@ -311,6 +319,17 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
     setEmail(p.email || '');
     setContact(p.contact);
     setRole(p.role);
+    
+    let resolvedStay: 'stay' | 'pp' = 'pp';
+    if (p.stayType === 'stay') {
+      resolvedStay = 'stay';
+    } else if (p.permissions) {
+      try {
+        const parsed = JSON.parse(p.permissions);
+        if (parsed.stayType === 'stay') resolvedStay = 'stay';
+      } catch (e) {}
+    }
+    setStayType(resolvedStay);
     setPassword('');
     try {
       if (p.permissions) {
@@ -335,19 +354,27 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
     e.preventDefault();
     setLoading(true);
     const token = await getToken();
-    const permsStr = JSON.stringify(permissions);
+    const permsStr = JSON.stringify({ ...permissions, stayType });
     
     try {
       if (editingParticipant) {
         const res = await fetch(`/api/participants/${editingParticipant.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ nim, name, phone: contact, email, role, permissions: permsStr, password })
+          body: JSON.stringify({ nim, name, phone: contact, email, role, stayType, permissions: permsStr, password })
         });
         if (res.ok) {
           const updated = await res.json();
-          setParticipants(participants.map(p => p.id === updated.id ? updated : p));
+          setParticipants(participants.map(p => p.id === updated.id ? { ...p, ...updated, stayType: updated.stayType || stayType } : p));
           setIsModalOpen(false);
+
+          // Background re-fetch to ensure sync with database
+          try {
+            const freshRes = await fetch('/api/participants', { headers: { Authorization: `Bearer ${token}` } });
+            if (freshRes.ok) {
+              setParticipants(await freshRes.json());
+            }
+          } catch (e) {}
         } else {
           alert('Gagal mengubah peserta');
         }
@@ -355,12 +382,20 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
         const res = await fetch('/api/participants', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ nim, name, phone: contact, email, role, permissions: permsStr, password })
+          body: JSON.stringify({ nim, name, phone: contact, email, role, stayType, permissions: permsStr, password })
         });
         if (res.ok) {
           const added = await res.json();
-          setParticipants([...participants, added]);
+          setParticipants([...participants, { ...added, stayType: added.stayType || stayType }]);
           setIsModalOpen(false);
+
+          // Background re-fetch to ensure sync with database
+          try {
+            const freshRes = await fetch('/api/participants', { headers: { Authorization: `Bearer ${token}` } });
+            if (freshRes.ok) {
+              setParticipants(await freshRes.json());
+            }
+          } catch (e) {}
         } else {
           const err = await res.json();
           alert(err.error || 'Gagal menambah peserta');
@@ -400,6 +435,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
       NIM: p.nim || '-',
       Nama: p.name,
       Jabatan: p.role,
+      'Tipe Tinggal': p.stayType === 'stay' ? 'Stay di Posko' : 'Pulang-Pergi (PP)',
       Email: p.email || '-',
       WhatsApp: p.contact || '-'
     }));
@@ -458,6 +494,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
                     {sortField === 'role' && (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />)}
                   </div>
                 </th>
+                <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipe Tinggal</th>
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">No. WhatsApp</th>
                 <th className="p-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Aksi</th>
@@ -465,7 +502,7 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
             </thead>
             <tbody className="divide-y divide-gray-100">
               {sortedParticipants.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-sm text-gray-500">Belum ada anggota terdaftar.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-sm text-gray-500">Belum ada anggota terdaftar.</td></tr>
               ) : sortedParticipants.map(p => (
                 <tr key={p.id} className="text-sm hover:bg-gray-50/50 transition-colors group">
                   <td className="p-4 font-mono text-xs text-gray-600">{p.nim || '-'}</td>
@@ -474,6 +511,17 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
                     <span className="inline-block px-2.5 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-medium">
                       {p.role}
                     </span>
+                  </td>
+                  <td className="p-4">
+                    {(p.stayType === 'stay' || (p.permissions && p.permissions.includes('"stayType":"stay"'))) ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-800 rounded-md text-xs font-bold border border-emerald-200">
+                        🏠 Stay Posko
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-800 rounded-md text-xs font-bold border border-blue-200">
+                        🚗 Pulang-Pergi
+                      </span>
+                    )}
                   </td>
                   <td className="p-4 text-gray-600">{p.email || '-'}</td>
                   <td className="p-4 text-gray-600 font-mono text-xs">{p.contact || '-'}</td>
@@ -531,6 +579,17 @@ export function ParticipantsView({ participants, setParticipants, getToken }: Pr
                     <input type="text" required value={role} onChange={e => setRole(e.target.value)} className="w-full p-2 border border-gray-200 rounded-lg text-sm" />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Tipe Tinggal KKN</label>
+                    <select
+                      value={stayType}
+                      onChange={e => setStayType(e.target.value as 'stay' | 'pp')}
+                      className="w-full p-2 border border-gray-200 rounded-lg text-sm bg-white font-medium outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    >
+                      <option value="pp">🚗 Pulang-Pergi (PP / Komuter)</option>
+                      <option value="stay">🏠 Stay di Posko (Menginap)</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
                     <label className="block text-xs font-medium text-gray-700 mb-1">
                       Sandi Login {editingParticipant && <span className="text-gray-400 font-normal text-[10px] ml-1">(Kosongkan jika tidak ingin mengubah)</span>}
                     </label>

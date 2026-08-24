@@ -10,6 +10,7 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   role: text('role').notNull().default('Anggota'),
   permissions: text('permissions').default('{"participants":"r","finance":"r","tasks":"r","calendar":"r","attendance":"r"}'),
+  stayType: text('stay_type').default('pp'), // 'stay' | 'pp'
   createdAt: timestamp('created_at').defaultNow(),
 });
 

@@ -21,7 +21,7 @@ export function CalendarView({ events, setEvents, getToken }: Props) {
   // State for Add Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }));
   const [time, setTime] = useState('08:00');
   const [desc, setDesc] = useState('');
   const [category, setCategory] = useState<'rapat' | 'kunjungan' | 'deadline_kampus' | 'kegiatan' | 'seminar' | 'sosialisasi' | 'lainnya'>('kegiatan');

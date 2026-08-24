@@ -206,7 +206,8 @@ app.use(express.json());
         role: u.role,
         contact: u.phone,
         email: u.email,
-        permissions: u.permissions
+        permissions: u.permissions,
+        stayType: u.stayType || 'pp'
       }));
       res.json(mapped);
     } catch (e) {
@@ -216,17 +217,17 @@ app.use(express.json());
 
   app.post("/api/participants", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { nim, name, phone, email, role, permissions, password } = req.body;
+      const { nim, name, phone, email, role, permissions, password, stayType } = req.body;
       const phoneDigits = String(phone || '').replace(/\D/g, '');
       const pwdToHash = password && password.trim() !== '' ? password : (phoneDigits.slice(-6) || '486908');
       const hashedPassword = await bcrypt.hash(pwdToHash, 10);
       const id = uuidv4();
       const newUser = await repositoryInsertUser({
-        id, nim: nim || '', name, phone, email, role: role || 'Anggota', password: hashedPassword, permissions
+        id, nim: nim || '', name, phone, email, role: role || 'Anggota', password: hashedPassword, permissions, stayType: stayType || 'pp'
       });
       
-      await logActivity(req.user!.id, "Menambah Peserta", `Menambahkan peserta: ${name}`);
-      res.json({ id: newUser.id, nim: newUser.nim, name: newUser.name, role: newUser.role, contact: newUser.phone, email: newUser.email, permissions: newUser.permissions });
+      await logActivity(req.user!.id, "Menambah Peserta", `Menambahkan peserta: ${name} (${stayType === 'stay' ? 'Stay Posko' : 'PP'})`);
+      res.json({ id: newUser.id, nim: newUser.nim, name: newUser.name, role: newUser.role, contact: newUser.phone, email: newUser.email, permissions: newUser.permissions, stayType: newUser.stayType || 'pp' });
     } catch (e) {
       res.status(500).json({ error: "Gagal menambah peserta." });
     }
@@ -245,7 +246,7 @@ app.use(express.json());
       let failCount = 0;
 
       for (const item of list) {
-        const { nim, name, phone, email, role, password, permissions } = item;
+        const { nim, name, phone, email, role, password, permissions, stayType } = item;
         if (!phone || !name) {
           results.push({ name: name || "Tanpa Nama", phone: phone || "Tanpa HP", success: false, error: "Nama dan Nomor WhatsApp wajib diisi." });
           failCount++;
@@ -273,10 +274,11 @@ app.use(express.json());
           email: email ? String(email).trim() : '', 
           role: role ? String(role).trim() : 'Anggota', 
           password: hashedPassword, 
-          permissions: permissions ? JSON.stringify(permissions) : defaultPerms
+          permissions: permissions ? JSON.stringify(permissions) : defaultPerms,
+          stayType: stayType || 'pp'
         });
 
-        results.push({ id, nim, name, role, success: true });
+        results.push({ id, nim, name, role, stayType: stayType || 'pp', success: true });
         successCount++;
       }
 
@@ -291,15 +293,15 @@ app.use(express.json());
 
   app.put("/api/participants/:id", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { nim, name, phone, email, role, permissions, password } = req.body;
-      const updateData: any = { nim, name, phone, email, role, permissions };
+      const { nim, name, phone, email, role, permissions, password, stayType } = req.body;
+      const updateData: any = { nim, name, phone, email, role, permissions, stayType };
       if (password && password.trim() !== '') {
         updateData.password = await bcrypt.hash(password, 10);
       }
       const updatedUser = await repositoryUpdateUser(req.params.id, updateData);
       
       await logActivity(req.user!.id, "Mengubah Peserta", `Mengubah data peserta: ${name}`);
-      res.json({ id: updatedUser.id, nim: updatedUser.nim, name: updatedUser.name, role: updatedUser.role, contact: updatedUser.phone, email: updatedUser.email, permissions: updatedUser.permissions });
+      res.json({ id: updatedUser.id, nim: updatedUser.nim, name: updatedUser.name, role: updatedUser.role, contact: updatedUser.phone, email: updatedUser.email, permissions: updatedUser.permissions, stayType: updatedUser.stayType || 'pp' });
     } catch (e) {
       res.status(500).json({ error: "Gagal mengubah peserta." });
     }
@@ -507,6 +509,16 @@ app.use(express.json());
         await pool.query(`ALTER TABLE attendance_records ADD COLUMN check_out_time TEXT`);
       }
     } catch (e) {}
+
+    try {
+      const resUserStay = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'stay_type'
+      `);
+      if (resUserStay.rows.length === 0) {
+        await pool.query(`ALTER TABLE users ADD COLUMN stay_type TEXT DEFAULT 'pp'`);
+      }
+    } catch (e) {}
   };
 
   const parseTimeFromNotes = (notes: string | null | undefined, tag: string) => {
@@ -623,16 +635,79 @@ app.use(express.json());
       }
 
       const { dateStr } = getWibDateTime();
-      const dailySession = await safeSelectDailySession(dateStr);
+      const allSessions = await repositoryGetAttendanceSessions();
+      const allRecords = await repositoryGetAttendanceRecords();
+
+      const dailySessions = allSessions
+        .filter(s => s.sessionType === 'daily')
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      const targetDailySession = dailySessions.find(s => s.date === dateStr);
       let dailyRecord = null;
-      if (dailySession.length > 0) {
-        const records = await safeSelectRecordsBySessionId(dailySession[0].id);
+      if (targetDailySession) {
+        const records = allRecords.filter(r => r.sessionId === targetDailySession.id);
         dailyRecord = records.find(r => r.userId === currentUserId) || null;
+      }
+
+      const currentUser = await repositoryGetUserById(currentUserId);
+      const isStayPosko = currentUser?.stayType === 'stay';
+
+      let dailyResult = {
+        status: 'Belum Absen',
+        checkInTime: '-',
+        checkOutTime: '-',
+        notes: ''
+      };
+
+      if (dailyRecord) {
+        dailyResult = {
+          status: dailyRecord.status || 'Belum Absen',
+          checkInTime: dailyRecord.checkInTime || parseTimeFromNotes(dailyRecord.notes, 'Check-In') || '-',
+          checkOutTime: dailyRecord.checkOutTime || parseTimeFromNotes(dailyRecord.notes, 'Check-Out') || '-',
+          notes: dailyRecord.notes || ''
+        };
+      } else {
+        // Cek status berkelanjutan dari hari sebelumnya (Sakit / Izin / Kerja atau Stay di Posko)
+        const previousSessions = dailySessions.filter(s => s.date < dateStr);
+        for (const prevSess of previousSessions) {
+          const prevRec = allRecords.find(r => r.sessionId === prevSess.id && r.userId === currentUserId);
+          if (prevRec && prevRec.status) {
+            const st = prevRec.status;
+            if (st === 'Sakit' || st === 'Izin' || st === 'Kerja') {
+              dailyResult = {
+                status: st,
+                checkInTime: '-',
+                checkOutTime: '-',
+                notes: `Lanjutan ${st} sejak ${prevSess.date}`
+              };
+              break;
+            }
+            if (isStayPosko) {
+              if (prevRec.checkOutTime && prevRec.checkOutTime !== '-') {
+                dailyResult = {
+                  status: 'Belum Absen',
+                  checkInTime: '-',
+                  checkOutTime: '-',
+                  notes: `Keluar Posko sejak ${prevSess.date} (${prevRec.checkOutTime})`
+                };
+              } else if (prevRec.status === 'Hadir') {
+                dailyResult = {
+                  status: 'Hadir',
+                  checkInTime: 'Stay Posko',
+                  checkOutTime: '-',
+                  notes: `Stay di Posko (Masuk sejak ${prevSess.date})`
+                };
+              }
+              break;
+            }
+            break;
+          }
+        }
       }
 
       const sessions = await safeSelectSessions();
       const records = await safeSelectRecords();
-      const userActivityRecords = records.filter(r => r.userId === currentUserId && (!dailySession[0] || r.sessionId !== dailySession[0].id));
+      const userActivityRecords = records.filter(r => r.userId === currentUserId && (!targetDailySession || r.sessionId !== targetDailySession.id));
       
       const activities = userActivityRecords.map(r => {
         const sess = sessions.find(s => s.id === r.sessionId);
@@ -647,20 +722,134 @@ app.use(express.json());
       });
 
       res.json({
-        daily: dailyRecord ? {
-          status: dailyRecord.status || 'Belum Absen',
-          checkInTime: dailyRecord.checkInTime || parseTimeFromNotes(dailyRecord.notes, 'Check-In') || '-',
-          checkOutTime: dailyRecord.checkOutTime || parseTimeFromNotes(dailyRecord.notes, 'Check-Out') || '-'
-        } : {
-          status: 'Belum Absen',
-          checkInTime: '-',
-          checkOutTime: '-'
-        },
+        daily: dailyResult,
         activities
       });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: "Gagal memuat status kehadiran." });
+    }
+  });
+
+  // GET /api/attendance/my-history - Riwayat Lengkap Absensi Pribadi (User yang Login)
+  app.get("/api/attendance/my-history", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const currentUserId = req.user?.id;
+      if (!currentUserId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const currentUser = await repositoryGetUserById(currentUserId);
+      const currentUserName = (currentUser?.name || req.user?.name || '').toLowerCase().trim();
+
+      const { dateStr } = getWibDateTime();
+      const allSessions = await repositoryGetAttendanceSessions();
+      const allRecords = await repositoryGetAttendanceRecords();
+
+      const isMyRecord = (r: any) => {
+        if (r.userId && r.userId === currentUserId) return true;
+        if (currentUserName && r.name && r.name.toLowerCase().trim() === currentUserName) return true;
+        return false;
+      };
+
+      // Kumpulkan semua tanggal unik dari sesi absensi, plus tanggal hari ini
+      const datesSet = new Set<string>();
+      datesSet.add(dateStr);
+      allSessions.forEach(s => {
+        if (s.date) datesSet.add(s.date);
+      });
+      allRecords.forEach(r => {
+        if (isMyRecord(r)) {
+          const sess = allSessions.find(s => s.id === r.sessionId);
+          if (sess?.date) datesSet.add(sess.date);
+        }
+      });
+
+      const sortedDates = Array.from(datesSet).sort((a, b) => b.localeCompare(a));
+
+      const dailySessions = allSessions.filter(s => s.sessionType === 'daily');
+      const activitySessions = allSessions.filter(s => s.sessionType !== 'daily');
+
+      // Bangun timeline harian lengkap untuk user ini
+      const dailyHistory = sortedDates.map(dateItem => {
+        const dSession = dailySessions.find(s => s.date === dateItem);
+        const dRec = dSession ? allRecords.find(r => r.sessionId === dSession.id && isMyRecord(r)) : null;
+
+        // Cari semua sesi kegiatan pada tanggal ini
+        const actsOnDate = activitySessions.filter(s => s.date === dateItem);
+        const userActs = actsOnDate.map(actSess => {
+          const actRec = allRecords.find(r => r.sessionId === actSess.id && isMyRecord(r));
+          return {
+            sessionId: actSess.id,
+            sessionTitle: actSess.title,
+            sessionDate: actSess.date,
+            status: actRec?.status || 'Belum Absen',
+            checkInTime: actRec?.checkInTime || parseTimeFromNotes(actRec?.notes, 'Check-In') || '-',
+            checkOutTime: actRec?.checkOutTime || parseTimeFromNotes(actRec?.notes, 'Check-Out') || '-',
+            notes: actRec?.notes || ''
+          };
+        }).filter(a => a.status !== 'Belum Absen' || a.checkInTime !== '-');
+
+        const poskoStatus = dRec?.status || (dateItem === dateStr ? 'Belum Absen' : '-');
+        const checkInPosko = dRec?.checkInTime || parseTimeFromNotes(dRec?.notes, 'Check-In') || '-';
+        const checkOutPosko = dRec?.checkOutTime || parseTimeFromNotes(dRec?.notes, 'Check-Out') || '-';
+
+        return {
+          sessionId: dSession?.id || `date-${dateItem}`,
+          date: dateItem,
+          status: poskoStatus,
+          checkInTime: checkInPosko,
+          checkOutTime: checkOutPosko,
+          notes: dRec?.notes || '',
+          activities: userActs
+        };
+      }).filter(item => {
+        // Tampilkan hari ini, atau tanggal yang memiliki absensi posko, atau tanggal yang memiliki kegiatan
+        return item.date === dateStr || item.status !== '-' || item.checkInTime !== '-' || item.activities.length > 0;
+      });
+
+      // Riwayat seluruh sesi kegiatan
+      const allActivitiesHistory = activitySessions.map(actSess => {
+        const actRec = allRecords.find(r => r.sessionId === actSess.id && isMyRecord(r));
+        return {
+          sessionId: actSess.id,
+          sessionTitle: actSess.title,
+          sessionDate: actSess.date,
+          status: actRec?.status || 'Belum Absen',
+          checkInTime: actRec?.checkInTime || parseTimeFromNotes(actRec?.notes, 'Check-In') || '-',
+          checkOutTime: actRec?.checkOutTime || parseTimeFromNotes(actRec?.notes, 'Check-Out') || '-',
+          notes: actRec?.notes || ''
+        };
+      }).filter(a => a.status !== 'Belum Absen' || a.checkInTime !== '-');
+
+      const totalDailyHadir = dailyHistory.filter(d => d.status === 'Hadir' || d.checkInTime !== '-').length;
+      const totalDailyIzin = dailyHistory.filter(d => d.status === 'Izin').length;
+      const totalDailySakit = dailyHistory.filter(d => d.status === 'Sakit').length;
+      const totalDailyKerja = dailyHistory.filter(d => d.status === 'Kerja').length;
+      const totalActivitiesAttended = allActivitiesHistory.filter(a => a.status === 'Hadir' || a.checkInTime !== '-').length;
+
+      res.json({
+        success: true,
+        user: {
+          id: req.user?.id,
+          name: currentUser?.name || req.user?.name,
+          role: currentUser?.role || req.user?.role,
+          nim: currentUser?.nim || req.user?.nim
+        },
+        dailyHistory,
+        allActivitiesHistory,
+        summary: {
+          totalDailyHadir,
+          totalDailyIzin,
+          totalDailySakit,
+          totalDailyKerja,
+          totalActivitiesAttended,
+          totalRecordedDays: dailyHistory.length
+        }
+      });
+    } catch (e) {
+      console.error("Error fetching my attendance history:", e);
+      res.status(500).json({ error: "Gagal memuat riwayat absensi pribadi." });
     }
   });
 
@@ -671,26 +860,59 @@ app.use(express.json());
       const targetDate = (req.query.date as string) || dateStr;
 
       const allUsers = await repositoryGetUsers();
-      const dailySession = await safeSelectDailySession(targetDate);
+      const allSessions = await repositoryGetAttendanceSessions();
+      const allRecords = await repositoryGetAttendanceRecords();
 
-      let recordsList: any[] = [];
-      if (dailySession.length > 0) {
-        recordsList = await safeSelectRecordsBySessionId(dailySession[0].id);
+      const dailySessions = allSessions
+        .filter(s => s.sessionType === 'daily' || (s.title && s.title.toLowerCase().includes('harian')))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const targetDailySession = dailySessions.find(s => s.date === targetDate);
+      let targetRecords: any[] = [];
+      if (targetDailySession) {
+        targetRecords = await repositoryGetAttendanceRecords(targetDailySession.id);
+      } else {
+        targetRecords = [];
       }
 
+      // Sesi harian sebelum targetDate (diurutkan dari yang paling dekat/terbaru ke yang lampau)
+      const previousDailySessions = dailySessions
+        .filter(s => s.date < targetDate)
+        .sort((a, b) => b.date.localeCompare(a.date));
+
       const report = allUsers.map((u, idx) => {
-        const rec = recordsList.find(r => r.userId === u.id);
+        const uNameNorm = (u.name || '').toLowerCase().trim();
+        const directRec = targetRecords.find(r => 
+          (r.userId && r.userId === u.id) || 
+          (uNameNorm && r.name && r.name.toLowerCase().trim() === uNameNorm)
+        );
+        
+        if (directRec) {
+          return {
+            no: idx + 1,
+            id: u.id,
+            recordId: directRec.id || null,
+            name: u.name,
+            nim: u.nim || '-',
+            divisi: u.role || 'Anggota',
+            checkInTime: directRec.checkInTime || parseTimeFromNotes(directRec.notes, 'Check-In') || '-',
+            checkOutTime: directRec.checkOutTime || parseTimeFromNotes(directRec.notes, 'Check-Out') || '-',
+            status: directRec.status || 'Belum Absen',
+            notes: directRec.notes || ''
+          };
+        }
+
         return {
           no: idx + 1,
           id: u.id,
-          recordId: rec?.id || null,
+          recordId: null,
           name: u.name,
           nim: u.nim || '-',
           divisi: u.role || 'Anggota',
-          checkInTime: rec?.checkInTime || parseTimeFromNotes(rec?.notes, 'Check-In') || '-',
-          checkOutTime: rec?.checkOutTime || parseTimeFromNotes(rec?.notes, 'Check-Out') || '-',
-          status: rec?.status || 'Belum Absen',
-          notes: rec?.notes || ''
+          checkInTime: '-',
+          checkOutTime: '-',
+          status: 'Belum Absen',
+          notes: ''
         };
       });
 
@@ -749,11 +971,17 @@ app.use(express.json());
         sessionId = dailySessions[0].id;
       }
 
-      const existingRecords = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
+      const targetNameNorm = (targetUser.name || '').toLowerCase().trim();
+      const existingRecords = (await safeSelectRecordsBySessionId(sessionId)).filter(r => 
+        (r.userId && r.userId === userId) ||
+        (targetNameNorm && r.name && r.name.toLowerCase().trim() === targetNameNorm)
+      );
 
       if (existingRecords.length > 0) {
         const rec = existingRecords[0];
         await safeUpdateRecord(rec.id, {
+          userId: targetUser.id,
+          name: targetUser.name,
           status: status || rec.status,
           checkInTime: checkInTime !== undefined ? checkInTime : rec.checkInTime,
           checkOutTime: checkOutTime !== undefined ? checkOutTime : rec.checkOutTime,
@@ -788,18 +1016,19 @@ app.use(express.json());
   app.post("/api/attendance/daily/checkin", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { dateStr, timeStr, hour, minute } = getWibDateTime();
-
-      // Check-In limit: Maximum 10:00 WIB
-      if (hour > 10 || (hour === 10 && minute > 0)) {
-        return res.status(400).json({
-          error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
-        });
-      }
-
       const userId = req.user!.id;
       const currentUser = await repositoryGetUserById(userId);
       if (!currentUser) {
         return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+      }
+
+      const isStayPosko = currentUser.stayType === 'stay';
+
+      // Check-In limit for non-stay (PP): Maximum 09:00 WIB
+      if (!isStayPosko && (hour > 9 || (hour === 9 && minute > 0))) {
+        return res.status(400).json({
+          error: "Absensi Check-In Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi adalah maksimal jam 09:00 WIB. Jika terlambat atau ada kepentingan lain, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
+        });
       }
 
       let dailySessions = await safeSelectDailySession(dateStr);
@@ -824,15 +1053,16 @@ app.use(express.json());
 
       if (existingRec.length > 0) {
         const rec = existingRec[0];
-        if (rec.checkInTime && rec.checkInTime !== '-') {
+        if (rec.checkInTime && rec.checkInTime !== '-' && rec.checkInTime !== 'Stay' && (!rec.checkOutTime || rec.checkOutTime === '-')) {
           return res.status(400).json({
-            error: `Halo ${currentUser.name}, Anda sudah Check-In hari ini pukul ${rec.checkInTime}.`
+            error: `Halo ${currentUser.name}, Anda saat ini sudah berstatus Check-In di Posko (pukul ${rec.checkInTime}).`
           });
         }
         await safeUpdateRecord(rec.id, {
           status: 'Hadir',
           checkInTime: displayTime,
-          notes: rec.notes ? `${rec.notes} | Check-In ${displayTime}` : `Check-In ${displayTime}`
+          checkOutTime: '-', // Reset checkOut to active in posko
+          notes: rec.notes ? `${rec.notes} | Tiba di Posko ${displayTime}` : `Tiba di Posko ${displayTime}`
         });
       } else {
         await safeInsertRecord({
@@ -842,11 +1072,12 @@ app.use(express.json());
           name: currentUser.name,
           status: 'Hadir',
           checkInTime: displayTime,
+          checkOutTime: '-',
           notes: `Check-In ${displayTime}`
         });
       }
 
-      await logActivity(currentUser.id, "Check-In Harian", `Check-In harian berhasil pukul ${displayTime}`);
+      await logActivity(currentUser.id, "Check-In Harian", `Check-In harian berhasil pukul ${displayTime} (${isStayPosko ? 'Stay Posko' : 'PP'})`);
 
       return res.json({
         success: true,
@@ -863,19 +1094,20 @@ app.use(express.json());
   // Daily Check-Out API
   app.post("/api/attendance/daily/checkout", requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { dateStr, timeStr, hour, minute } = getWibDateTime();
-
-      // Check-Out limit: Maximum 22:00 WIB
-      if (hour > 22 || (hour === 22 && minute > 0)) {
-        return res.status(400).json({
-          error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
-        });
-      }
-
+      const { dateStr, timeStr, hour } = getWibDateTime();
       const userId = req.user!.id;
       const currentUser = await repositoryGetUserById(userId);
       if (!currentUser) {
         return res.status(404).json({ error: "Pengguna tidak ditemukan." });
+      }
+
+      const isStayPosko = currentUser.stayType === 'stay';
+
+      // Check-Out limit for non-stay (PP): Minimum 19:00 WIB
+      if (!isStayPosko && hour < 19) {
+        return res.status(400).json({
+          error: "Absensi Check-Out Belum Dibuka: Jam kepulangan harian peserta Pulang-Pergi minimal adalah pukul 19:00 WIB. Jika ada keperluan mendesak/pulang cepat, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
+        });
       }
 
       let dailySessions = await safeSelectDailySession(dateStr);
@@ -907,7 +1139,7 @@ app.use(express.json());
         }
         await safeUpdateRecord(rec.id, {
           checkOutTime: displayTime,
-          notes: rec.notes ? `${rec.notes} | Check-Out ${displayTime}` : `Check-Out ${displayTime}`
+          notes: rec.notes ? `${rec.notes} | Keluar Posko ${displayTime}` : `Keluar Posko ${displayTime}`
         });
       } else {
         await safeInsertRecord({
@@ -916,12 +1148,13 @@ app.use(express.json());
           userId: currentUser.id,
           name: currentUser.name,
           status: 'Hadir',
+          checkInTime: '-',
           checkOutTime: displayTime,
-          notes: `Check-Out ${displayTime}`
+          notes: `Keluar Posko ${displayTime}`
         });
       }
 
-      await logActivity(currentUser.id, "Check-Out Harian", `Check-Out harian berhasil pukul ${displayTime}`);
+      await logActivity(currentUser.id, "Check-Out Harian", `Check-Out harian berhasil pukul ${displayTime} (${isStayPosko ? 'Stay Posko' : 'PP'})`);
 
       return res.json({
         success: true,
@@ -969,6 +1202,10 @@ app.use(express.json());
         (currentUser.role || '').toLowerCase().includes('super admin');
       
       const parseDailyQrDate = (str: string): string | null => {
+        const u = str.toUpperCase();
+        if (u === 'POSKO_CHECKIN' || u === 'POSKO_CHECKOUT' || u === 'CHECKIN' || u === 'CHECKOUT') {
+          return null; // Universal permanent QR code
+        }
         const matchWithDash = str.match(/\d{4}-\d{2}-\d{2}/);
         if (matchWithDash) return matchWithDash[0];
         const match8Digits = str.match(/(\d{4})(\d{2})(\d{2})/);
@@ -1001,17 +1238,19 @@ app.use(express.json());
       // Check if code corresponds to daily check-in
       if (upperParamId.includes('CHECKIN')) {
         const { dateStr, timeStr, hour, minute } = getWibDateTime();
+        const isStayPosko = currentUser.stayType === 'stay';
         
         const embeddedDate = parseDailyQrDate(paramId);
         if (embeddedDate && embeddedDate !== dateStr) {
           return res.status(400).json({
-            error: `Absensi Check-In Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini.`
+            error: `Absensi Check-In Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini / QR Posko Tetap.`
           });
         }
 
-        if (hour > 10 || (hour === 10 && minute > 0)) {
+        // Check-In limit for non-stay (PP): Maximum 09:00 WIB
+        if (!isStayPosko && (hour > 9 || (hour === 9 && minute > 0))) {
           return res.status(400).json({
-            error: "Absensi Check-In Ditutup: Batas waktu Check-In harian adalah maksimal jam 10:00 WIB."
+            error: "Absensi Check-In Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi adalah maksimal jam 09:00 WIB. Jika terlambat atau ada kepentingan lain, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
           });
         }
 
@@ -1033,13 +1272,14 @@ app.use(express.json());
 
         if (existingRec.length > 0) {
           const rec = existingRec[0];
-          if (rec.checkInTime && rec.checkInTime !== '-') {
-            return res.status(400).json({ error: `Halo ${currentUser.name}, Anda sudah Check-In pukul ${rec.checkInTime}.` });
+          if (rec.checkInTime && rec.checkInTime !== '-' && rec.checkInTime !== 'Stay' && (!rec.checkOutTime || rec.checkOutTime === '-')) {
+            return res.status(400).json({ error: `Halo ${currentUser.name}, Anda saat ini sudah berstatus Check-In di Posko (pukul ${rec.checkInTime}).` });
           }
           await safeUpdateRecord(rec.id, {
             status: 'Hadir',
             checkInTime: displayTime,
-            notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(' | ') : noteTag
+            checkOutTime: '-', // Reset checkOut so user is active in posko
+            notes: rec.notes ? [rec.notes, `Tiba di Posko ${displayTime}`, noteTag].filter(Boolean).join(' | ') : [displayTime, noteTag].filter(Boolean).join(' ')
           });
         } else {
           await safeInsertRecord({
@@ -1049,26 +1289,29 @@ app.use(express.json());
             name: currentUser.name,
             status: 'Hadir',
             checkInTime: displayTime,
+            checkOutTime: '-',
             notes: noteTag
           });
         }
-        return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
+        return res.json({ success: true, message: `Check-In Berhasil! Halo ${currentUser.name}, Check-In Anda pukul ${displayTime} dicatat. Status kehadiran aktif di Posko.`, sessionTitle: `Absensi Harian Check-In`, name: currentUser.name });
       }
 
       // Check if code corresponds to daily checkout
       if (upperParamId.includes('CHECKOUT')) {
-        const { dateStr, timeStr, hour, minute } = getWibDateTime();
+        const { dateStr, timeStr, hour } = getWibDateTime();
+        const isStayPosko = currentUser.stayType === 'stay';
         
         const embeddedDate = parseDailyQrDate(paramId);
         if (embeddedDate && embeddedDate !== dateStr) {
           return res.status(400).json({
-            error: `Absensi Check-Out Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini.`
+            error: `Absensi Check-Out Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini / QR Posko Tetap.`
           });
         }
 
-        if (hour > 22 || (hour === 22 && minute > 0)) {
+        // Check-Out limit for non-stay (PP): Minimum 19:00 WIB
+        if (!isStayPosko && hour < 19) {
           return res.status(400).json({
-            error: "Absensi Check-Out Ditutup: Batas waktu Check-Out harian adalah maksimal jam 22:00 WIB."
+            error: "Absensi Check-Out Belum Dibuka: Jam kepulangan harian peserta Pulang-Pergi minimal adalah pukul 19:00 WIB. Jika ada keperluan mendesak/pulang cepat, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
           });
         }
 
@@ -1095,7 +1338,7 @@ app.use(express.json());
           }
           await safeUpdateRecord(rec.id, {
             checkOutTime: displayTime,
-            notes: rec.notes ? [rec.notes, noteTag].filter(Boolean).join(' | ') : noteTag
+            notes: rec.notes ? [rec.notes, `Keluar Posko ${displayTime}`, noteTag].filter(Boolean).join(' | ') : noteTag
           });
         } else {
           await safeInsertRecord({
@@ -1104,6 +1347,7 @@ app.use(express.json());
             userId: currentUser.id,
             name: currentUser.name,
             status: 'Hadir',
+            checkInTime: '-',
             checkOutTime: displayTime,
             notes: noteTag
           });

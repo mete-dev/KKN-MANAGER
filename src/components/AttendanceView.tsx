@@ -69,6 +69,9 @@ export default function AttendanceView({ getToken, participants }: Props) {
     roleNorm.includes('ketua') || 
     isSuperAdmin;
 
+  const currentParticipant = participants.find(p => p.id === user?.id || p.nim === user?.nim || p.contact === user?.phone);
+  const isStayUser = currentParticipant?.stayType === 'stay' || user?.stayType === 'stay' || (user?.permissions && user.permissions.includes('"stayType":"stay"'));
+
   const todayWibDateStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
   const [selectedPreviewSelfie, setSelectedPreviewSelfie] = useState<string | null>(null);
 
@@ -161,9 +164,12 @@ export default function AttendanceView({ getToken, participants }: Props) {
   const [view, setView] = useState<'list' | 'create' | 'edit' | 'detail'>('list');
   const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null);
   
+  // Helper for WIB Date
+  const getTodayWib = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' });
+
   // Form States
   const [formTitle, setFormTitle] = useState('');
-  const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
+  const [formDate, setFormDate] = useState(getTodayWib());
   const [formNotes, setFormNotes] = useState('');
   const [formIsPermanent, setFormIsPermanent] = useState(false);
   const [formRecords, setFormRecords] = useState<AttendeeRecord[]>([]);
@@ -204,7 +210,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
 
   // --- DAILY QR MODAL & REPORT STATES ---
   const [dailyQrModalType, setDailyQrModalType] = useState<'checkin' | 'checkout' | null>(null);
-  const [dailyReportDate, setDailyReportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [dailyReportDate, setDailyReportDate] = useState<string>(getTodayWib());
   const [dailyReportData, setDailyReportData] = useState<DailyReportRow[]>([]);
   const [dailyReportLoading, setDailyReportLoading] = useState<boolean>(false);
 
@@ -284,8 +290,8 @@ export default function AttendanceView({ getToken, participants }: Props) {
     const hour = h || 0;
     const minute = m || 0;
     
-    const isCheckInOpen = hour < 10 || (hour === 10 && minute === 0);
-    const isCheckOutOpen = hour < 22 || (hour === 22 && minute === 0);
+    const isCheckInOpen = hour < 9 || (hour === 9 && minute === 0);
+    const isCheckOutOpen = hour >= 19;
     return { timeStr, hour, minute, isCheckInOpen, isCheckOutOpen };
   };
 
@@ -645,7 +651,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
   // Init new session form
   const initCreateSession = (defaultStatus: string = 'Belum Absen') => {
     setFormTitle('');
-    setFormDate(new Date().toISOString().split('T')[0]);
+    setFormDate(getTodayWib());
     setFormNotes('');
     setFormIsPermanent(false);
     setCustomName('');
@@ -1553,110 +1559,112 @@ export default function AttendanceView({ getToken, participants }: Props) {
       {/* SUB TAB 2: ABSENSI HARIAN (CHECK-IN & CHECK-OUT) */}
       {view === 'list' && activeSubTab === 'harian' && (
         <div className="space-y-6">
-          {/* TWO MAIN QR CARDS: CHECK-IN & CHECK-OUT (SIDE-BY-SIDE ON MOBILE TO SAVE SPACE) */}
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
-            {/* CARD 1: QR ABSENSI CHECK IN */}
-            <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-2 sm:gap-3">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-2">
-                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
-                  <div className="w-7 h-7 sm:w-9 sm:h-9 bg-emerald-600 text-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                    <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          {/* 1 BARIS COMPACT BAR: CHECK-IN & CHECK-OUT */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-xs p-3.5 sm:p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+              
+              {/* CHECK-IN ITEM */}
+              <div className="flex items-center justify-between gap-3 md:pr-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0 shadow-2xs">
+                    <LogIn className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-gray-900 text-xs sm:text-base truncate">Check-In</h3>
-                    <p className="text-[9px] sm:text-xs text-emerald-800 font-medium truncate">Maks: 10:00 WIB</p>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-gray-900 text-sm">Check-In</h4>
+                      <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border shrink-0 ${
+                        isStayUser 
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
+                          : wibInfo.isCheckInOpen 
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-100' 
+                            : 'bg-rose-50 text-rose-800 border-rose-100'
+                      }`}>
+                        {isStayUser ? 'Fleksibel' : wibInfo.isCheckInOpen ? 'Buka' : 'Tutup'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {isStayUser ? 'Kedatangan / Aktif di Posko (Stay)' : 'Maksimal pukul 09:00 WIB'}
+                    </p>
                   </div>
                 </div>
 
-                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full border shrink-0 ${
-                  wibInfo.isCheckInOpen 
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-100' 
-                    : 'bg-rose-50 text-rose-800 border-rose-100'
-                }`}>
-                  {wibInfo.isCheckInOpen ? 'Buka' : 'Tutup'}
-                </span>
+                <div className="shrink-0">
+                  {isSekretarisOrLeader ? (
+                    <button
+                      onClick={() => setDailyQrModalType('checkin')}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <QrCode className="w-4 h-4" />
+                      <span>QR Check-In Posko</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setIsScannerOpen(true);
+                        setScanSuccessResult(null);
+                        setScanError(null);
+                        setManualCode(`POSKO_CHECKIN`);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <ScanLine className="w-4 h-4" />
+                      <span>Scan Check-In</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <p className="text-[10px] sm:text-xs text-gray-500 leading-tight bg-gray-50/50 p-2 sm:p-2.5 rounded-xl border border-gray-100/60 hidden sm:block">
-                Pencatatan kedatangan harian (maksimal pukul <strong>10:00 WIB</strong>).
-              </p>
-
-              <div>
-                {isSekretarisOrLeader ? (
-                  <button
-                    onClick={() => setDailyQrModalType('checkin')}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
-                  >
-                    <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>QR Check-In</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setIsScannerOpen(true);
-                      setScanSuccessResult(null);
-                      setScanError(null);
-                      setManualCode(`CHECKIN-${todayWibDateStr}`);
-                    }}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
-                  >
-                    <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>Scan Check-In</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* CARD 2: QR ABSENSI CHECK OUT */}
-            <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-100 shadow-xs flex flex-col justify-between gap-2 sm:gap-3">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-2">
-                <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
-                  <div className="w-7 h-7 sm:w-9 sm:h-9 bg-blue-600 text-white rounded-lg sm:rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                    <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              {/* CHECK-OUT ITEM */}
+              <div className="flex items-center justify-between gap-3 pt-3 md:pt-0 md:pl-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0 shadow-2xs">
+                    <LogOut className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-gray-900 text-xs sm:text-base truncate">Check-Out</h3>
-                    <p className="text-[9px] sm:text-xs text-blue-800 font-medium truncate">Maks: 22:00 WIB</p>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-gray-900 text-sm">Check-Out</h4>
+                      <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border shrink-0 ${
+                        isStayUser 
+                          ? 'bg-blue-50 text-blue-800 border-blue-100'
+                          : wibInfo.isCheckOutOpen 
+                            ? 'bg-blue-50 text-blue-800 border-blue-100' 
+                            : 'bg-rose-50 text-rose-800 border-rose-100'
+                      }`}>
+                        {isStayUser ? 'Fleksibel' : wibInfo.isCheckOutOpen ? 'Buka' : 'Tutup'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {isStayUser ? 'Izin Keluar / Pulang dari Posko' : 'Minimal pukul 19:00 WIB'}
+                    </p>
                   </div>
                 </div>
 
-                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-full border shrink-0 ${
-                  wibInfo.isCheckOutOpen 
-                    ? 'bg-blue-50 text-blue-800 border-blue-100' 
-                    : 'bg-rose-50 text-rose-800 border-rose-100'
-                }`}>
-                  {wibInfo.isCheckOutOpen ? 'Buka' : 'Tutup'}
-                </span>
+                <div className="shrink-0">
+                  {isSekretarisOrLeader ? (
+                    <button
+                      onClick={() => setDailyQrModalType('checkout')}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <QrCode className="w-4 h-4" />
+                      <span>QR Check-Out Posko</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setIsScannerOpen(true);
+                        setScanSuccessResult(null);
+                        setScanError(null);
+                        setManualCode(`POSKO_CHECKOUT`);
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <ScanLine className="w-4 h-4" />
+                      <span>Scan Check-Out</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <p className="text-[10px] sm:text-xs text-gray-500 leading-tight bg-gray-50/50 p-2 sm:p-2.5 rounded-xl border border-gray-100/60 hidden sm:block">
-                Pencatatan kepulangan harian (maksimal pukul <strong>22:00 WIB</strong>).
-              </p>
-
-              <div>
-                {isSekretarisOrLeader ? (
-                  <button
-                    onClick={() => setDailyQrModalType('checkout')}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
-                  >
-                    <QrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>QR Check-Out</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setIsScannerOpen(true);
-                      setScanSuccessResult(null);
-                      setScanError(null);
-                      setManualCode(`CHECKOUT-${todayWibDateStr}`);
-                    }}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-1.5 sm:px-3 rounded-xl text-[10px] sm:text-sm transition-all flex items-center justify-center gap-1 shadow-xs"
-                  >
-                    <ScanLine className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>Scan Check-Out</span>
-                  </button>
-                )}
-              </div>
             </div>
           </div>
 
@@ -1669,7 +1677,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   Laporan Absensi Harian Per Hari
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Laporan rekapitulasi 5 kolom utama: Nomor, Nama, NIM, Divisi, Cek In (Jam), dan Cek Out (Jam)
+                  Rekapitulasi kehadiran harian: Nama & Identitas, Status, Cek In (Jam, Foto, GPS), Cek Out, Catatan, dan Aksi
                 </p>
               </div>
 
@@ -1713,13 +1721,13 @@ export default function AttendanceView({ getToken, participants }: Props) {
               <div className="bg-emerald-50/70 p-3 rounded-2xl border border-emerald-100 text-center">
                 <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">Hadir</span>
                 <span className="text-lg font-black text-emerald-700">
-                  {dailyReportData.filter(r => r.status === 'Hadir' || (r.status !== 'Izin' && r.status !== 'Sakit' && r.status !== 'Alpa' && r.checkInTime !== '-')).length} Orang
+                  {dailyReportData.filter(r => r.status === 'Hadir' || (r.status !== 'Izin' && r.status !== 'Sakit' && r.status !== 'Kerja' && r.status !== 'Alpa' && r.checkInTime !== '-')).length} Orang
                 </span>
               </div>
               <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-100 text-center">
-                <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Izin / Sakit</span>
+                <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Izin / Sakit / Kerja</span>
                 <span className="text-lg font-black text-amber-700">
-                  {dailyReportData.filter(r => r.status === 'Izin' || r.status === 'Sakit').length} Orang
+                  {dailyReportData.filter(r => r.status === 'Izin' || r.status === 'Sakit' || r.status === 'Kerja').length} Orang
                 </span>
               </div>
               <div className="bg-rose-50/70 p-3 rounded-2xl border border-rose-100 text-center">
@@ -1742,27 +1750,25 @@ export default function AttendanceView({ getToken, participants }: Props) {
                 <thead>
                   <tr className="bg-gray-900 text-white text-xs font-bold uppercase tracking-wider">
                     <th className="p-3.5 text-center w-12">No</th>
-                    <th className="p-3.5">Nama</th>
-                    <th className="p-3.5">NIM</th>
-                    <th className="p-3.5">Divisi</th>
-                    <th className="p-3.5 text-center">Status</th>
-                    <th className="p-3.5 text-center">Cek In (jam)</th>
-                    <th className="p-3.5 text-center">Cek Out (jam)</th>
-                    <th className="p-3.5">Catatan</th>
-                    {isSekretarisOrLeader && <th className="p-3.5 text-center">Aksi</th>}
+                    <th className="p-3.5 min-w-[200px]">Nama & Anggota</th>
+                    <th className="p-3.5 text-center w-[130px]">Status Absensi</th>
+                    <th className="p-3.5 text-center min-w-[160px]">Cek In (Jam, Foto, Lokasi)</th>
+                    <th className="p-3.5 text-center min-w-[140px]">Cek Out (Jam)</th>
+                    <th className="p-3.5 min-w-[150px]">Catatan</th>
+                    {isSekretarisOrLeader && <th className="p-3.5 text-center w-24">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-medium">
                   {dailyReportLoading ? (
                     <tr>
-                      <td colSpan={isSekretarisOrLeader ? 9 : 8} className="p-8 text-center text-gray-400">
+                      <td colSpan={isSekretarisOrLeader ? 7 : 6} className="p-8 text-center text-gray-400">
                         <Loader2 className="w-6 h-6 animate-spin mx-auto text-emerald-600 mb-2" />
                         Memuat data laporan harian...
                       </td>
                     </tr>
                   ) : dailyReportData.length === 0 ? (
                     <tr>
-                      <td colSpan={isSekretarisOrLeader ? 9 : 8} className="p-8 text-center text-gray-400">
+                      <td colSpan={isSekretarisOrLeader ? 7 : 6} className="p-8 text-center text-gray-400">
                         Tidak ada data anggota untuk tanggal {dailyReportDate}.
                       </td>
                     </tr>
@@ -1772,17 +1778,27 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       if (row.status === 'Hadir') statusBadgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
                       else if (row.status === 'Izin') statusBadgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
                       else if (row.status === 'Sakit') statusBadgeClass = 'bg-purple-50 text-purple-800 border-purple-200';
+                      else if (row.status === 'Kerja') statusBadgeClass = 'bg-blue-50 text-blue-800 border-blue-200';
                       else if (row.status === 'Alpa') statusBadgeClass = 'bg-rose-50 text-rose-800 border-rose-200';
+
+                      const gpsInfo = parseGpsCoords(row.notes);
+                      const photoUrl = parsePhotoUrl(row.notes);
+                      const cleanNotes = getCleanNotes(row.notes);
 
                       return (
                         <tr key={row.id} className="hover:bg-gray-50/60 transition-colors">
                           <td className="p-3.5 text-center font-bold text-gray-500 text-xs">{idx + 1}</td>
-                          <td className="p-3.5 font-bold text-gray-900">{row.name}</td>
-                          <td className="p-3.5 text-gray-600 font-mono text-xs">{row.nim || '-'}</td>
                           <td className="p-3.5">
-                            <span className="bg-gray-100 text-gray-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-gray-200/60">
-                              {row.divisi}
-                            </span>
+                            <div className="space-y-0.5">
+                              <span className="font-bold text-gray-900 block leading-snug">{row.name}</span>
+                              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                                <span className="font-mono">{row.nim || '-'}</span>
+                                <span>•</span>
+                                <span className="bg-gray-100 text-gray-700 text-[10px] font-bold px-2 py-0.2 rounded-full border border-gray-200/60">
+                                  {row.divisi}
+                                </span>
+                              </div>
+                            </div>
                           </td>
                           <td className="p-3.5 text-center">
                             <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border inline-block ${statusBadgeClass}`}>
@@ -1790,16 +1806,46 @@ export default function AttendanceView({ getToken, participants }: Props) {
                             </span>
                           </td>
                           <td className="p-3.5 text-center">
-                            {row.status === 'Hadir' && row.checkInTime !== '-' ? (
-                              <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center justify-center gap-1 w-fit mx-auto">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> {row.checkInTime}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-400 font-medium">-</span>
-                            )}
+                            <div className="flex flex-col items-center gap-1.5">
+                              {row.checkInTime && row.checkInTime !== '-' ? (
+                                <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 flex items-center justify-center gap-1 w-fit">
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> {row.checkInTime === 'Stay' ? 'Stay Posko' : row.checkInTime}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400 font-medium">-</span>
+                              )}
+
+                              {(gpsInfo || photoUrl) && (
+                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                  {gpsInfo && (
+                                    <a
+                                      href={`https://www.google.com/maps?q=${gpsInfo.lat},${gpsInfo.lng}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
+                                      title="Buka lokasi di Google Maps"
+                                    >
+                                      <MapPin className="w-3 h-3 text-emerald-600" />
+                                      <span>Lokasi GPS</span>
+                                    </a>
+                                  )}
+
+                                  {photoUrl && (
+                                    <button
+                                      onClick={() => setSelectedPreviewSelfie(photoUrl)}
+                                      className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition-colors shadow-2xs cursor-pointer"
+                                      title="Klik untuk melihat foto selfie"
+                                    >
+                                      <Camera className="w-3 h-3 text-blue-600" />
+                                      <span>Foto Selfie</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3.5 text-center">
-                            {row.status === 'Hadir' && row.checkOutTime !== '-' ? (
+                            {row.checkOutTime && row.checkOutTime !== '-' ? (
                               <span className="text-xs font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100 flex items-center justify-center gap-1 w-fit mx-auto">
                                 <CheckCircle className="w-3.5 h-3.5 text-blue-600" /> {row.checkOutTime}
                               </span>
@@ -1808,68 +1854,19 @@ export default function AttendanceView({ getToken, participants }: Props) {
                             )}
                           </td>
                           <td className="p-3.5 align-middle">
-                            {(() => {
-                              const isCheckInScan = row.checkInTime !== '-';
-                              const gpsInfo = parseGpsCoords(row.notes);
-                              const photoUrl = parsePhotoUrl(row.notes);
-                              const cleanNotes = getCleanNotes(row.notes);
-                              
-                              return (
-                                <div className="space-y-1">
-                                  {row.status !== 'Hadir' ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100/60 px-2.5 py-0.5 rounded-md max-w-[200px] sm:max-w-[260px] truncate" title={cleanNotes || row.status || 'Belum Absen'}>
-                                      ℹ️ {cleanNotes || row.status || 'Belum Absen'}
-                                    </span>
-                                  ) : (
-                                    <>
-                                      {cleanNotes && cleanNotes !== '-' && (
-                                        <span className="inline-flex items-center gap-1 text-xs text-gray-700 font-medium bg-gray-50 border border-gray-200/80 px-2 py-0.5 rounded-md max-w-[180px] sm:max-w-[240px] truncate cursor-help shadow-2xs" title={cleanNotes}>
-                                          <span className="text-amber-600 font-bold text-[10px]">ℹ️</span>
-                                          <span className="truncate">{cleanNotes}</span>
-                                        </span>
-                                      )}
-                                      {!cleanNotes && isCheckInScan && !gpsInfo && !photoUrl && (
-                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 rounded-md">
-                                          ✓ Scan Mandiri
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-
-                                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                                    {gpsInfo && (
-                                      <a
-                                        href={`https://www.google.com/maps?q=${gpsInfo.lat},${gpsInfo.lng}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/80 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
-                                        title="Buka lokasi di Google Maps"
-                                      >
-                                        <MapPin className="w-3 h-3 text-emerald-600" />
-                                        <span>📍 Lokasi GPS</span>
-                                      </a>
-                                    )}
-
-                                    {photoUrl && (
-                                      <button
-                                        onClick={() => setSelectedPreviewSelfie(photoUrl)}
-                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2 py-0.5 rounded-md transition-colors shadow-2xs"
-                                        title="Klik untuk melihat foto selfie"
-                                      >
-                                        <Camera className="w-3 h-3 text-blue-600" />
-                                        <span>📸 Foto Selfie</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })()}
+                            {cleanNotes && cleanNotes !== '-' ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-gray-700 font-medium bg-gray-50 border border-gray-200/80 px-2 py-1 rounded-md max-w-[200px] truncate shadow-2xs" title={cleanNotes}>
+                                ℹ️ <span className="truncate">{cleanNotes}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
                           </td>
                           {isSekretarisOrLeader && (
                             <td className="p-3.5 text-center">
                               <button
                                 onClick={() => handleOpenEditDailyModal(row)}
-                                className="text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 mx-auto shadow-2xs"
+                                className="text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 px-2.5 py-1.5 rounded-xl transition-all flex items-center gap-1 mx-auto shadow-2xs cursor-pointer"
                                 title="Edit Status Absensi, Jam & Catatan Harian"
                               >
                                 <Edit3 className="w-3.5 h-3.5 text-amber-700" />
@@ -2652,67 +2649,54 @@ export default function AttendanceView({ getToken, participants }: Props) {
       {/* --- MODAL 3: DAILY QR MODAL FOR CHECK-IN & CHECK-OUT --- */}
       {dailyQrModalType && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className={`p-5 text-white flex items-center justify-between ${
+          <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className={`p-4 text-white flex items-center justify-between ${
               dailyQrModalType === 'checkin' 
-                ? 'bg-gradient-to-r from-emerald-700 to-teal-800' 
-                : 'bg-gradient-to-r from-blue-700 to-indigo-800'
+                ? 'bg-emerald-600' 
+                : 'bg-blue-600'
             }`}>
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center border border-white/30">
-                  {dailyQrModalType === 'checkin' ? <LogIn className="w-5 h-5 text-white" /> : <LogOut className="w-5 h-5 text-white" />}
+                <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center border border-white/30 shrink-0">
+                  {dailyQrModalType === 'checkin' ? <LogIn className="w-4 h-4 text-white" /> : <LogOut className="w-4 h-4 text-white" />}
                 </div>
-                <div>
-                  <h3 className="font-bold text-base leading-tight">
-                    {dailyQrModalType === 'checkin' ? 'QR Absensi Check-In Harian' : 'QR Absensi Check-Out Harian'}
-                  </h3>
-                  <p className="text-[11px] text-white/80">
-                    {dailyQrModalType === 'checkin' ? 'Batas maksimal: Jam 10:00 WIB' : 'Batas maksimal: Jam 22:00 WIB'}
-                  </p>
-                </div>
+                <h3 className="font-bold text-sm">
+                  {dailyQrModalType === 'checkin' ? 'QR Code Check-In Posko' : 'QR Code Check-Out Posko'}
+                </h3>
               </div>
               <button
                 onClick={() => setDailyQrModalType(null)}
-                className="p-1.5 hover:bg-white/10 rounded-full transition-colors text-white/80 hover:text-white"
+                className="p-1 hover:bg-white/10 rounded-full transition-colors text-white/80 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6 text-center">
-              <div>
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${
-                  dailyQrModalType === 'checkin'
-                    ? 'text-emerald-800 bg-emerald-50 border-emerald-100'
-                    : 'text-blue-800 bg-blue-50 border-blue-100'
-                }`}>
-                  {dailyQrModalType === 'checkin' ? 'Absensi Kedatangan (Maks 10:00 WIB)' : 'Absensi Pulang (Maks 22:00 WIB)'}
-                </span>
-                <h2 className="text-xl font-black text-gray-900 mt-2">
-                  {dailyQrModalType === 'checkin' ? 'Scan Check-In Hari Ini' : 'Scan Check-Out Hari Ini'}
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Tanggal: {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                </p>
-              </div>
-
-              <div className={`p-6 rounded-3xl border-2 border-dashed inline-block mx-auto shadow-inner ${
-                dailyQrModalType === 'checkin' ? 'bg-emerald-50/50 border-emerald-200' : 'bg-blue-50/50 border-blue-200'
+            {/* QR Body */}
+            <div className="p-6 space-y-4 text-center">
+              <div className={`p-5 rounded-2xl border-2 border-dashed inline-block mx-auto ${
+                dailyQrModalType === 'checkin' ? 'bg-emerald-50/40 border-emerald-200' : 'bg-blue-50/40 border-blue-200'
               }`}>
                 <QRCodeSVG
-                  value={dailyQrModalType === 'checkin' ? `DAILY_CHECKIN_${todayWibDateStr}` : `DAILY_CHECKOUT_${todayWibDateStr}`}
-                  size={210}
+                  value={dailyQrModalType === 'checkin' ? 'POSKO_CHECKIN' : 'POSKO_CHECKOUT'}
+                  size={200}
                   level="H"
                   includeMargin={true}
                   className="rounded-xl shadow-xs bg-white p-2"
                 />
               </div>
 
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-center text-xs text-gray-500">
+                <p className="font-medium text-[11px]">
+                  Cukup scan sekali setiap {dailyQrModalType === 'checkin' ? 'kedatangan' : 'kepulangan'} di Posko KKN.
+                </p>
+              </div>
+
               <button
                 onClick={() => setDailyQrModalType(null)}
-                className="w-full py-3 bg-gray-900 hover:bg-black text-white font-bold text-sm rounded-xl transition-all shadow-md"
+                className="w-full py-2.5 bg-gray-900 hover:bg-black text-white font-bold text-xs rounded-xl transition-all shadow-xs cursor-pointer"
               >
-                Tutup Tampilan QR
+                Tutup
               </button>
             </div>
           </div>
@@ -2759,9 +2743,13 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   <option value="Hadir">Hadir</option>
                   <option value="Izin">Izin</option>
                   <option value="Sakit">Sakit</option>
+                  <option value="Kerja">Kerja</option>
                   <option value="Alpa">Alpa</option>
                   <option value="Belum Absen">Belum Absen</option>
                 </select>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  *Status Izin/Sakit/Kerja akan otomatis berlanjut di hari berikutnya sampai anggota melakukan Scan Check-In kembali.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2771,7 +2759,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     type="text"
                     value={editDailyCheckIn}
                     onChange={e => setEditDailyCheckIn(e.target.value)}
-                    placeholder="Contoh: 07:45 atau -"
+                    placeholder="Contoh: 07:45, Stay, atau -"
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500/20"
                   />
                 </div>
@@ -2781,19 +2769,19 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     type="text"
                     value={editDailyCheckOut}
                     onChange={e => setEditDailyCheckOut(e.target.value)}
-                    placeholder="Contoh: 17:30 atau -"
+                    placeholder="Contoh: 19:30 atau -"
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500/20"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Catatan / Alasan Izin / Sakit</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Catatan / Alasan Izin / Sakit / Keterangan</label>
                 <textarea
                   rows={2}
                   value={editDailyNotes}
                   onChange={e => setEditDailyNotes(e.target.value)}
-                  placeholder="Keterangan izin, surat dokter, sakit, dinas luar, dll."
+                  placeholder="Keterangan izin WA Kordes, sakit, dinas kampus, dll."
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-amber-500/20 resize-none mb-2"
                 />
                 
@@ -2802,10 +2790,12 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Catatan Cepat:</span>
                   <div className="flex flex-wrap gap-1">
                     {[
-                      'Diabsenkan oleh Sekretaris',
-                      'Sakit (Ada Surat Dokter)',
-                      'Izin Kegiatan Kampus',
-                      'Terlambat (Izin Posko)'
+                      'Izin (Konfirmasi WA Kordes)',
+                      'Sakit (Konfirmasi WA Kordes)',
+                      'Kerja (Konfirmasi WA Kordes)',
+                      'Terlambat (Izin Kordes & Sekretaris)',
+                      'Stay di Posko',
+                      'Diabsenkan oleh Sekretaris'
                     ].map((opt) => (
                       <button
                         key={opt}

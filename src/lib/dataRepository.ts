@@ -64,11 +64,27 @@ function withTimeout<T>(promise: Promise<T>, ms: number = QUERY_TIMEOUT_MS): Pro
 
 // ================= USER OPERATIONS =================
 export async function repositoryGetUsers(): Promise<any[]> {
+  const parseUserStayType = (u: any) => {
+    let stayFromPerms = null;
+    try {
+      if (u.permissions) {
+        const p = typeof u.permissions === 'string' ? JSON.parse(u.permissions) : u.permissions;
+        if (p && p.stayType) stayFromPerms = p.stayType;
+      }
+    } catch (e) {}
+
+    return u.stay_type || u.stayType || stayFromPerms || 'pp';
+  };
+
   if (isSupabaseConfigured()) {
     try {
       const { data, error } = await getSupabase().from('users').select('*');
       if (!error && data) {
-        if (data.length > 0) memoryStore.users = data;
+        const mapped = data.map(u => ({
+          ...u,
+          stayType: parseUserStayType(u)
+        }));
+        if (mapped.length > 0) memoryStore.users = mapped;
         return memoryStore.users;
       }
     } catch (e) {
@@ -77,13 +93,13 @@ export async function repositoryGetUsers(): Promise<any[]> {
   }
 
   if (!isPostgresConfigured()) {
-    return memoryStore.users;
+    return memoryStore.users.map(u => ({ ...u, stayType: parseUserStayType(u) }));
   }
 
   try {
     const res = await withTimeout(db.select().from(users));
     if (res && res.length > 0) {
-      memoryStore.users = res;
+      memoryStore.users = res.map(u => ({ ...u, stayType: parseUserStayType(u) }));
     }
     return memoryStore.users;
   } catch (e) {
@@ -115,6 +131,18 @@ export async function repositoryFindUserByPhoneOrNim(phoneOrNim: string): Promis
 }
 
 export async function repositoryInsertUser(userData: any): Promise<any> {
+  const stayVal = userData.stayType || userData.stay_type || 'pp';
+  
+  // Embed stayType into permissions JSON string as guaranteed fallback
+  let permsObj: any = {};
+  try {
+    permsObj = typeof userData.permissions === 'string' ? JSON.parse(userData.permissions) : (userData.permissions || {});
+  } catch (e) {
+    permsObj = {};
+  }
+  permsObj.stayType = stayVal;
+  const finalPerms = JSON.stringify(permsObj);
+
   const userItem = {
     id: userData.id || uuidv4(),
     nim: userData.nim || '',
@@ -123,7 +151,8 @@ export async function repositoryInsertUser(userData: any): Promise<any> {
     name: userData.name || '',
     email: userData.email || '',
     role: userData.role || 'Anggota',
-    permissions: userData.permissions || DEFAULT_PERMS,
+    permissions: finalPerms,
+    stayType: stayVal,
     createdAt: userData.createdAt || new Date().toISOString()
   };
 
@@ -136,36 +165,91 @@ export async function repositoryInsertUser(userData: any): Promise<any> {
 
   if (isSupabaseConfigured()) {
     try {
-      await getSupabase().from('users').upsert([userItem]);
+      const { error } = await getSupabase().from('users').upsert([{
+        id: userItem.id,
+        nim: userItem.nim,
+        phone: userItem.phone,
+        password: userItem.password,
+        name: userItem.name,
+        email: userItem.email,
+        role: userItem.role,
+        permissions: userItem.permissions,
+        stay_type: userItem.stayType,
+        created_at: userItem.createdAt
+      }]);
+      if (error && error.message && error.message.includes('stay_type')) {
+        // Fallback without stay_type column
+        await getSupabase().from('users').upsert([{
+          id: userItem.id,
+          nim: userItem.nim,
+          phone: userItem.phone,
+          password: userItem.password,
+          name: userItem.name,
+          email: userItem.email,
+          role: userItem.role,
+          permissions: userItem.permissions,
+          created_at: userItem.createdAt
+        }]);
+      }
     } catch (e) {}
   }
 
   try {
     const inserted = await withTimeout(db.insert(users).values(userItem).returning());
-    if (inserted && inserted[0]) return inserted[0];
+    if (inserted && inserted[0]) return { ...inserted[0], stayType: stayVal };
   } catch (e) {}
 
   return userItem;
 }
 
 export async function repositoryUpdateUser(id: string, updateData: any): Promise<any> {
+  const stayVal = updateData.stayType !== undefined ? updateData.stayType : updateData.stay_type;
+  
+  // Embed stayType into permissions JSON string as guaranteed fallback
+  let permsObj: any = {};
+  try {
+    permsObj = typeof updateData.permissions === 'string' ? JSON.parse(updateData.permissions) : (updateData.permissions || {});
+  } catch (e) {
+    permsObj = {};
+  }
+  if (stayVal) {
+    permsObj.stayType = stayVal;
+    updateData.permissions = JSON.stringify(permsObj);
+  }
+
   const idx = memoryStore.users.findIndex(u => u.id === id);
   if (idx >= 0) {
-    memoryStore.users[idx] = { ...memoryStore.users[idx], ...updateData };
+    memoryStore.users[idx] = { 
+      ...memoryStore.users[idx], 
+      ...updateData, 
+      stayType: stayVal || memoryStore.users[idx].stayType || 'pp' 
+    };
   }
 
   if (isSupabaseConfigured()) {
     try {
-      await getSupabase().from('users').update(updateData).eq('id', id);
+      const dbUpdate: any = { ...updateData };
+      if (stayVal) {
+        dbUpdate.stay_type = stayVal;
+      }
+      delete dbUpdate.stayType;
+      
+      const { error } = await getSupabase().from('users').update(dbUpdate).eq('id', id);
+      if (error && error.message && error.message.includes('stay_type')) {
+        delete dbUpdate.stay_type;
+        await getSupabase().from('users').update(dbUpdate).eq('id', id);
+      }
     } catch (e) {}
   }
 
   try {
-    const updated = await withTimeout(db.update(users).set(updateData).where(eq(users.id, id)).returning());
-    if (updated && updated[0]) return updated[0];
+    const dbUpdateData = { ...updateData };
+    delete dbUpdateData.stayType;
+    const updated = await withTimeout(db.update(users).set(dbUpdateData).where(eq(users.id, id)).returning());
+    if (updated && updated[0]) return { ...updated[0], stayType: stayVal || 'pp' };
   } catch (e) {}
 
-  return memoryStore.users[idx] || updateData;
+  return memoryStore.users[idx] || { ...updateData, stayType: stayVal || 'pp' };
 }
 
 export async function repositoryDeleteUser(id: string): Promise<boolean> {
@@ -450,22 +534,38 @@ export async function repositoryInsertLog(logData: any): Promise<any> {
 export async function repositoryGetAttendanceSessions(): Promise<any[]> {
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await getSupabase().from('attendance_sessions').select('*');
-      if (!error && data) {
-        memoryStore.attendanceSessions = data.map(s => ({
-          ...s,
-          sessionType: s.session_type || s.sessionType || 'event',
-          isPermanent: s.is_permanent ?? s.isPermanent ?? 0,
-          createdBy: s.created_by || s.createdBy
-        }));
-        return memoryStore.attendanceSessions;
+      const { data, error } = await getSupabase().from('attendance_sessions').select('*').limit(10000);
+      if (!error && data && data.length > 0) {
+        data.forEach(s => {
+          const mapped = {
+            ...s,
+            sessionType: s.session_type || s.sessionType || 'event',
+            isPermanent: s.is_permanent ?? s.isPermanent ?? 0,
+            createdBy: s.created_by || s.createdBy
+          };
+          const idx = memoryStore.attendanceSessions.findIndex(item => item.id === mapped.id);
+          if (idx >= 0) {
+            memoryStore.attendanceSessions[idx] = { ...memoryStore.attendanceSessions[idx], ...mapped };
+          } else {
+            memoryStore.attendanceSessions.push(mapped);
+          }
+        });
       }
     } catch (e) {}
   }
 
   try {
     const res = await withTimeout(db.select().from(attendanceSessions));
-    if (res) memoryStore.attendanceSessions = res;
+    if (res && res.length > 0) {
+      res.forEach(s => {
+        const idx = memoryStore.attendanceSessions.findIndex(item => item.id === s.id);
+        if (idx >= 0) {
+          memoryStore.attendanceSessions[idx] = { ...memoryStore.attendanceSessions[idx], ...s };
+        } else {
+          memoryStore.attendanceSessions.push(s);
+        }
+      });
+    }
   } catch (e) {}
 
   return memoryStore.attendanceSessions;
@@ -511,10 +611,12 @@ export async function repositoryGetAttendanceRecords(sessionId?: string): Promis
     try {
       let query = getSupabase().from('attendance_records').select('*');
       if (sessionId) {
-        query = query.eq('session_id', sessionId);
+        query = query.eq('session_id', sessionId).limit(5000);
+      } else {
+        query = query.limit(50000);
       }
       const { data, error } = await query;
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         const mapped = data.map(r => ({
           ...r,
           sessionId: r.session_id || r.sessionId,
@@ -522,15 +624,14 @@ export async function repositoryGetAttendanceRecords(sessionId?: string): Promis
           checkInTime: r.check_in_time || r.checkInTime || '-',
           checkOutTime: r.check_out_time || r.checkOutTime || '-'
         }));
-        if (sessionId) {
-          memoryStore.attendanceRecords = memoryStore.attendanceRecords
-            .filter(r => r.sessionId !== sessionId)
-            .concat(mapped);
-          return mapped;
-        } else {
-          memoryStore.attendanceRecords = mapped;
-          return memoryStore.attendanceRecords;
-        }
+        mapped.forEach(m => {
+          const idx = memoryStore.attendanceRecords.findIndex(r => r.id === m.id);
+          if (idx >= 0) {
+            memoryStore.attendanceRecords[idx] = { ...memoryStore.attendanceRecords[idx], ...m };
+          } else {
+            memoryStore.attendanceRecords.push(m);
+          }
+        });
       }
     } catch (e) {}
   }
@@ -542,15 +643,15 @@ export async function repositoryGetAttendanceRecords(sessionId?: string): Promis
     } else {
       res = await withTimeout(db.select().from(attendanceRecords));
     }
-    if (res) {
-      if (sessionId) {
-        memoryStore.attendanceRecords = memoryStore.attendanceRecords
-          .filter(r => r.sessionId !== sessionId)
-          .concat(res);
-        return res;
-      } else {
-        memoryStore.attendanceRecords = res;
-      }
+    if (res && res.length > 0) {
+      res.forEach(m => {
+        const idx = memoryStore.attendanceRecords.findIndex(r => r.id === m.id);
+        if (idx >= 0) {
+          memoryStore.attendanceRecords[idx] = { ...memoryStore.attendanceRecords[idx], ...m };
+        } else {
+          memoryStore.attendanceRecords.push(m);
+        }
+      });
     }
   } catch (e) {}
 
@@ -631,35 +732,50 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
   const backupAttendanceSessions = Array.isArray(data.attendanceSessions) ? data.attendanceSessions : [];
   const backupAttendanceRecords = Array.isArray(data.attendanceRecords) ? data.attendanceRecords : [];
 
-  // Helper for upserting array in memoryStore
-  const upsertList = (storeList: any[], newItems: any[]) => {
+  // Helper for upserting array in memoryStore with custom key extractor
+  const upsertListWithKey = (storeList: any[], newItems: any[], keyFn: (item: any) => string) => {
     const itemMap = new Map<string, any>();
     for (const item of storeList) {
-      if (item.id) itemMap.set(String(item.id), item);
+      const key = keyFn(item);
+      if (key) itemMap.set(key, item);
     }
     for (const item of newItems) {
-      if (item.id) {
-        const id = String(item.id);
-        const existing = itemMap.get(id) || {};
-        itemMap.set(id, { ...existing, ...item });
+      const key = keyFn(item);
+      if (key) {
+        const existing = itemMap.get(key) || {};
+        itemMap.set(key, { ...existing, ...item });
       }
     }
     return Array.from(itemMap.values());
   };
 
   // 1. Process Users
-  const formattedUsers = backupUsers.map((u: any) => ({
-    id: String(u.id || uuidv4()),
-    nim: String(u.nim || ''),
-    phone: String(u.phone || ''),
-    password: u.password || DEFAULT_PASS_HASH,
-    name: String(u.name || 'Anggota'),
-    email: String(u.email || ''),
-    role: String(u.role || 'Anggota'),
-    permissions: typeof u.permissions === 'object' ? JSON.stringify(u.permissions) : String(u.permissions || DEFAULT_PERMS),
-    createdAt: u.createdAt || u.created_at || new Date().toISOString()
-  }));
-  memoryStore.users = upsertList(memoryStore.users, formattedUsers);
+  const formattedUsers = backupUsers.map((u: any) => {
+    let stayType = u.stayType || u.stay_type || null;
+    if (!stayType && u.permissions) {
+      try {
+        const p = typeof u.permissions === 'string' ? JSON.parse(u.permissions) : u.permissions;
+        if (p && p.stayType) stayType = p.stayType;
+      } catch (e) {}
+    }
+    return {
+      id: String(u.id || uuidv4()),
+      nim: String(u.nim || ''),
+      phone: String(u.phone || ''),
+      password: u.password || DEFAULT_PASS_HASH,
+      name: String(u.name || 'Anggota'),
+      email: String(u.email || ''),
+      role: String(u.role || 'Anggota'),
+      stayType: stayType || 'pp',
+      permissions: typeof u.permissions === 'object' ? JSON.stringify(u.permissions) : String(u.permissions || DEFAULT_PERMS),
+      createdAt: u.createdAt || u.created_at || new Date().toISOString()
+    };
+  });
+  memoryStore.users = upsertListWithKey(
+    memoryStore.users, 
+    formattedUsers, 
+    (u) => String(u.id || u.nim || u.phone || u.name)
+  );
 
   // 2. Process Transactions
   const formattedTransactions = backupTransactions.map((t: any) => ({
@@ -674,7 +790,11 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
     status: String(t.status || 'active'),
     createdAt: t.createdAt || t.created_at || new Date().toISOString()
   }));
-  memoryStore.transactions = upsertList(memoryStore.transactions, formattedTransactions);
+  memoryStore.transactions = upsertListWithKey(
+    memoryStore.transactions, 
+    formattedTransactions, 
+    (t) => String(t.id)
+  );
 
   // 3. Process Tasks
   const formattedTasks = backupTasks.map((tk: any) => ({
@@ -691,7 +811,11 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
     referenceLink: tk.referenceLink || tk.reference_link ? String(tk.referenceLink || tk.reference_link) : null,
     createdAt: tk.createdAt || tk.created_at || new Date().toISOString()
   }));
-  memoryStore.tasks = upsertList(memoryStore.tasks, formattedTasks);
+  memoryStore.tasks = upsertListWithKey(
+    memoryStore.tasks, 
+    formattedTasks, 
+    (tk) => String(tk.id)
+  );
 
   // 4. Process Events
   const formattedEvents = backupEvents.map((ev: any) => ({
@@ -704,7 +828,11 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
     category: String(ev.category || 'other'),
     createdAt: ev.createdAt || ev.created_at || new Date().toISOString()
   }));
-  memoryStore.events = upsertList(memoryStore.events, formattedEvents);
+  memoryStore.events = upsertListWithKey(
+    memoryStore.events, 
+    formattedEvents, 
+    (ev) => String(ev.id || `${ev.title}_${ev.date}`)
+  );
 
   // 5. Process Logs
   const formattedLogs = backupLogs.map((l: any) => ({
@@ -714,19 +842,28 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
     details: l.details ? String(l.details) : null,
     createdAt: l.createdAt || l.created_at || new Date().toISOString()
   }));
-  memoryStore.logs = upsertList(memoryStore.logs, formattedLogs);
+  memoryStore.logs = upsertListWithKey(
+    memoryStore.logs, 
+    formattedLogs, 
+    (l) => String(l.id)
+  );
 
   // 6. Process Attendance Sessions
   const formattedSessions = backupAttendanceSessions.map((s: any) => ({
     id: String(s.id || uuidv4()),
     title: String(s.title || 'Absensi'),
     date: String(s.date || new Date().toISOString().split('T')[0]),
+    sessionType: String(s.sessionType || s.session_type || 'event'),
     notes: s.notes ? String(s.notes) : null,
     isPermanent: Number(s.isPermanent ?? s.is_permanent ?? 0),
     createdBy: String(s.createdBy || s.created_by || ''),
     createdAt: s.createdAt || s.created_at || new Date().toISOString()
   }));
-  memoryStore.attendanceSessions = upsertList(memoryStore.attendanceSessions, formattedSessions);
+  memoryStore.attendanceSessions = upsertListWithKey(
+    memoryStore.attendanceSessions, 
+    formattedSessions, 
+    (s) => String(s.id || `${s.title}_${s.date}`)
+  );
 
   // 7. Process Attendance Records
   const formattedRecords = backupAttendanceRecords.map((r: any) => ({
@@ -735,14 +872,18 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
     userId: r.userId || r.user_id ? String(r.userId || r.user_id) : null,
     name: String(r.name || 'Anggota'),
     status: String(r.status || 'Hadir'),
-    checkInTime: r.checkInTime || r.check_in_time || null,
-    checkOutTime: r.checkOutTime || r.check_out_time || null,
+    checkInTime: r.checkInTime || r.check_in_time || '-',
+    checkOutTime: r.checkOutTime || r.check_out_time || '-',
     notes: r.notes ? String(r.notes) : '',
     createdAt: r.createdAt || r.created_at || new Date().toISOString()
   }));
-  memoryStore.attendanceRecords = upsertList(memoryStore.attendanceRecords, formattedRecords);
+  memoryStore.attendanceRecords = upsertListWithKey(
+    memoryStore.attendanceRecords, 
+    formattedRecords, 
+    (r) => String(r.id || `${r.sessionId}_${r.userId || r.name}`)
+  );
 
-  // Non-blocking background batch persistence attempt
+  // Background Database Sync (Supabase / Postgres)
   (async () => {
     if (isSupabaseConfigured()) {
       try {
@@ -755,6 +896,7 @@ export async function repositoryBatchRestore(data: any): Promise<any> {
             email: u.email,
             name: u.name,
             role: u.role,
+            stay_type: u.stayType,
             permissions: u.permissions,
             created_at: u.createdAt
           }));
