@@ -65661,11 +65661,9 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           error: `Absensi Check-Out Gagal: Kode QR ini untuk tanggal ${embeddedDate}, sedangkan hari ini adalah ${dateStr}. Silakan gunakan QR Code hari ini / QR Posko Tetap.`
         });
       }
-      if (!isStayPosko && hour < 19) {
-        return res.status(400).json({
-          error: "Absensi Check-Out Belum Dibuka: Jam kepulangan harian peserta Pulang-Pergi minimal adalah pukul 19:00 WIB. Jika ada keperluan mendesak/pulang cepat, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
-        });
-      }
+      const isEarlyCheckout = !isStayPosko && !isSuperAdminBypass && hour < 19;
+      const displayTime2 = isEarlyCheckout ? "12.00 WIB" : `${timeStr2.slice(0, 5)} WIB`;
+      const earlyNote = isEarlyCheckout ? `\u26A0\uFE0F Pulang Sebelum 19.00 WIB (Aktual: ${timeStr2.slice(0, 5)} WIB, dicatat: 12.00 WIB)` : "";
       let dailySessions = await safeSelectDailySession(dateStr);
       let sessionId2 = dailySessions.length > 0 ? dailySessions[0].id : v4_default();
       if (dailySessions.length === 0) {
@@ -65678,7 +65676,6 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         });
       }
       const existingRec = (await safeSelectRecordsBySessionId(sessionId2)).filter((r) => r.userId === userId);
-      const displayTime2 = `${timeStr2.slice(0, 5)} WIB`;
       const gpsStr2 = location2 && typeof location2.lat === "number" && typeof location2.lng === "number" ? `\u{1F4CD} GPS: ${location2.lat.toFixed(6)}, ${location2.lng.toFixed(6)}` : "";
       const photoStr2 = photo ? `[PHOTO:${photo}]` : "";
       const noteTag2 = [gpsStr2, photoStr2].filter(Boolean).join(" ");
@@ -65689,7 +65686,7 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
         }
         await safeUpdateRecord(rec.id, {
           checkOutTime: displayTime2,
-          notes: rec.notes ? [rec.notes, `Keluar Posko ${displayTime2}`, noteTag2].filter(Boolean).join(" | ") : noteTag2
+          notes: rec.notes ? [rec.notes, earlyNote, `Keluar Posko ${displayTime2}`, noteTag2].filter(Boolean).join(" | ") : [earlyNote, noteTag2].filter(Boolean).join(" ")
         });
       } else {
         await safeInsertRecord({
@@ -65700,10 +65697,11 @@ app.post("/api/attendance/:id/scan", requireAuth, async (req, res) => {
           status: "Hadir",
           checkInTime: "-",
           checkOutTime: displayTime2,
-          notes: noteTag2
+          notes: [earlyNote, noteTag2].filter(Boolean).join(" ")
         });
       }
-      return res.json({ success: true, message: `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime2} dicatat.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
+      const returnMsg = isEarlyCheckout ? `PERINGATAN! Check-Out sebelum pukul 19.00 WIB berhasil dicatat sebagai pukul 12.00 WIB (Waktu aktual: ${timeStr2.slice(0, 5)} WIB).` : `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime2} dicatat.`;
+      return res.json({ success: true, message: returnMsg, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
     }
     const sessionId = paramId;
     const session = await safeSelectSessionById(sessionId);

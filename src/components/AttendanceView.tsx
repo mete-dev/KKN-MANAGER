@@ -523,10 +523,6 @@ export default function AttendanceView({ getToken, participants }: Props) {
             isScanProcessingRef.current = false;
             throw new Error('Absensi Check-In Gagal / Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi maksimal adalah pukul 09:00 WIB. Terlambat wajib mengajukan izin ke Kordes / Sekretaris.');
           }
-          if (upperTarget.includes('CHECKOUT') && !curWib.isCheckOutOpen) {
-            isScanProcessingRef.current = false;
-            throw new Error('Absensi Check-Out Gagal / Belum Dibuka: Waktu kepulangan minimal adalah pukul 19:00 WIB. Pulang mendahului jam checkout wajib mengajukan izin ke Kordes / Sekretaris.');
-          }
         }
 
         // Absen Harian: Wajib Selfie & GPS Posko (<= 500m)
@@ -2425,6 +2421,21 @@ export default function AttendanceView({ getToken, participants }: Props) {
                     <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2.5 leading-relaxed font-medium text-left">
                       <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                       <span>{scanError}</span>
+                    </div>
+                  )}
+
+                  {/* Early Check-Out Warning Banner (<19:00 WIB) */}
+                  {pendingSessionId && pendingSessionId.toUpperCase().includes('CHECKOUT') && !isStayUser && !isSuperAdmin && getWibStatus().hour < 19 && (
+                    <div className="bg-rose-50 border-2 border-rose-300 text-rose-900 p-3.5 rounded-2xl text-xs flex items-start gap-2.5 text-left shadow-sm">
+                      <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-black block text-rose-950 text-xs tracking-wide uppercase">
+                          ⚠️ PERINGATAN! JIKA ANDA CEK OUT SEBELUM PUKUL 19.00 WIB MAKA AKAN DI CATAT PUKUL 12.00 WIB
+                        </span>
+                        <p className="text-[11px] text-rose-800 leading-snug mt-1 font-medium">
+                          Batas normal kepulangan peserta Pulang-Pergi adalah minimal pukul 19.00 WIB. Melakukan check-out sekarang akan otomatis dicatat sebagai kepulangan pukul <strong>12.00 WIB</strong>.
+                        </p>
+                      </div>
                     </div>
                   )}
 

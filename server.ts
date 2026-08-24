@@ -1308,12 +1308,9 @@ app.use(express.json());
           });
         }
 
-        // Check-Out limit for non-stay (PP): Minimum 19:00 WIB
-        if (!isStayPosko && hour < 19) {
-          return res.status(400).json({
-            error: "Absensi Check-Out Belum Dibuka: Jam kepulangan harian peserta Pulang-Pergi minimal adalah pukul 19:00 WIB. Jika ada keperluan mendesak/pulang cepat, silakan ajukan izin via WhatsApp ke Kordes (Ketua) dengan tembusan ke Sekretaris."
-          });
-        }
+        const isEarlyCheckout = !isStayPosko && !isSuperAdminBypass && hour < 19;
+        const displayTime = isEarlyCheckout ? '12.00 WIB' : `${timeStr.slice(0,5)} WIB`;
+        const earlyNote = isEarlyCheckout ? `⚠️ Pulang Sebelum 19.00 WIB (Aktual: ${timeStr.slice(0,5)} WIB, dicatat: 12.00 WIB)` : '';
 
         let dailySessions = await safeSelectDailySession(dateStr);
         let sessionId = dailySessions.length > 0 ? dailySessions[0].id : uuidv4();
@@ -1323,7 +1320,6 @@ app.use(express.json());
           });
         }
         const existingRec = (await safeSelectRecordsBySessionId(sessionId)).filter(r => r.userId === userId);
-        const displayTime = `${timeStr.slice(0,5)} WIB`;
         
         const gpsStr = (location && typeof location.lat === 'number' && typeof location.lng === 'number')
           ? `📍 GPS: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
@@ -1338,7 +1334,7 @@ app.use(express.json());
           }
           await safeUpdateRecord(rec.id, {
             checkOutTime: displayTime,
-            notes: rec.notes ? [rec.notes, `Keluar Posko ${displayTime}`, noteTag].filter(Boolean).join(' | ') : noteTag
+            notes: rec.notes ? [rec.notes, earlyNote, `Keluar Posko ${displayTime}`, noteTag].filter(Boolean).join(' | ') : [earlyNote, noteTag].filter(Boolean).join(' ')
           });
         } else {
           await safeInsertRecord({
@@ -1349,10 +1345,15 @@ app.use(express.json());
             status: 'Hadir',
             checkInTime: '-',
             checkOutTime: displayTime,
-            notes: noteTag
+            notes: [earlyNote, noteTag].filter(Boolean).join(' ')
           });
         }
-        return res.json({ success: true, message: `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime} dicatat.`, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
+
+        const returnMsg = isEarlyCheckout
+          ? `PERINGATAN! Check-Out sebelum pukul 19.00 WIB berhasil dicatat sebagai pukul 12.00 WIB (Waktu aktual: ${timeStr.slice(0,5)} WIB).`
+          : `Check-Out Berhasil! Halo ${currentUser.name}, Check-Out Anda pukul ${displayTime} dicatat.`;
+
+        return res.json({ success: true, message: returnMsg, sessionTitle: `Absensi Harian Check-Out`, name: currentUser.name });
       }
 
       const sessionId = paramId;
