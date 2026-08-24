@@ -2430,7 +2430,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
                       <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-black block text-rose-950 text-xs tracking-wide uppercase">
-                          ⚠️ PERINGATAN! JIKA ANDA CEK OUT SEBELUM PUKUL 19.00 WIB MAKA AKAN DI CATAT PUKUL 12.00 WIB
+                          ⚠️ PERINGATAN! JIKA ANDA CEK OUT PULANG SEBELUM PUKUL 19.00 WIB MAKA AKAN DI CATAT PUKUL 12.00 WIB
                         </span>
                         <p className="text-[11px] text-rose-800 leading-snug mt-1 font-medium">
                           Batas normal kepulangan peserta Pulang-Pergi adalah minimal pukul 19.00 WIB. Melakukan check-out sekarang akan otomatis dicatat sebagai kepulangan pukul <strong>12.00 WIB</strong>.

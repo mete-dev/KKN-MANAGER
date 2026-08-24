@@ -888,6 +888,17 @@ app.use(express.json());
         );
         
         if (directRec) {
+          let rawCheckOut = directRec.checkOutTime || parseTimeFromNotes(directRec.notes, 'Check-Out') || '-';
+          
+          // Aturan: Jika peserta PP Hadir tapi tidak cek out atau pulang sebelum jam 19.00 WIB, tercatat 12.00 WIB
+          const isStayUser = u.stayType === 'stay';
+          const { dateStr: todayStr, hour: currentHour } = getWibDateTime();
+          const isDayPastOrEnded = targetDate < todayStr || (targetDate === todayStr && currentHour >= 19);
+
+          if (!isStayUser && directRec.status === 'Hadir' && isDayPastOrEnded && (rawCheckOut === '-' || !rawCheckOut)) {
+            rawCheckOut = '12.00 WIB';
+          }
+
           return {
             no: idx + 1,
             id: u.id,
@@ -896,7 +907,7 @@ app.use(express.json());
             nim: u.nim || '-',
             divisi: u.role || 'Anggota',
             checkInTime: directRec.checkInTime || parseTimeFromNotes(directRec.notes, 'Check-In') || '-',
-            checkOutTime: directRec.checkOutTime || parseTimeFromNotes(directRec.notes, 'Check-Out') || '-',
+            checkOutTime: rawCheckOut,
             status: directRec.status || 'Belum Absen',
             notes: directRec.notes || ''
           };

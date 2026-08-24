@@ -65306,6 +65306,13 @@ app.get("/api/attendance/daily-report", requireAuth, async (req, res) => {
         (r) => r.userId && r.userId === u.id || uNameNorm && r.name && r.name.toLowerCase().trim() === uNameNorm
       );
       if (directRec) {
+        let rawCheckOut = directRec.checkOutTime || parseTimeFromNotes(directRec.notes, "Check-Out") || "-";
+        const isStayUser = u.stayType === "stay";
+        const { dateStr: todayStr, hour: currentHour } = getWibDateTime();
+        const isDayPastOrEnded = targetDate < todayStr || targetDate === todayStr && currentHour >= 19;
+        if (!isStayUser && directRec.status === "Hadir" && isDayPastOrEnded && (rawCheckOut === "-" || !rawCheckOut)) {
+          rawCheckOut = "12.00 WIB";
+        }
         return {
           no: idx + 1,
           id: u.id,
@@ -65314,7 +65321,7 @@ app.get("/api/attendance/daily-report", requireAuth, async (req, res) => {
           nim: u.nim || "-",
           divisi: u.role || "Anggota",
           checkInTime: directRec.checkInTime || parseTimeFromNotes(directRec.notes, "Check-In") || "-",
-          checkOutTime: directRec.checkOutTime || parseTimeFromNotes(directRec.notes, "Check-Out") || "-",
+          checkOutTime: rawCheckOut,
           status: directRec.status || "Belum Absen",
           notes: directRec.notes || ""
         };
