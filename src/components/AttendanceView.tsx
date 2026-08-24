@@ -517,6 +517,18 @@ export default function AttendanceView({ getToken, participants }: Props) {
       const isDailyAttendance = upperTarget.includes('CHECKIN') || upperTarget.includes('CHECKOUT');
 
       if (isDailyAttendance) {
+        if (!isStayUser && !isSuperAdmin) {
+          const curWib = getWibStatus();
+          if (upperTarget.includes('CHECKIN') && !curWib.isCheckInOpen) {
+            isScanProcessingRef.current = false;
+            throw new Error('Absensi Check-In Gagal / Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi maksimal adalah pukul 09:00 WIB. Terlambat wajib mengajukan izin ke Kordes / Sekretaris.');
+          }
+          if (upperTarget.includes('CHECKOUT') && !curWib.isCheckOutOpen) {
+            isScanProcessingRef.current = false;
+            throw new Error('Absensi Check-Out Gagal / Belum Dibuka: Waktu kepulangan minimal adalah pukul 19:00 WIB. Pulang mendahului jam checkout wajib mengajukan izin ke Kordes / Sekretaris.');
+          }
+        }
+
         // Absen Harian: Wajib Selfie & GPS Posko (<= 500m)
         setPendingSessionId(targetSessionId);
         setScanStep('selfie');
