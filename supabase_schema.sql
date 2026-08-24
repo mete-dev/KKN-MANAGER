@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'Anggota',
   permissions TEXT DEFAULT '{"participants":"r","finance":"r","tasks":"r","calendar":"r","attendance":"r"}',
+  stay_type TEXT DEFAULT 'pp', -- 'stay' | 'pp'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
