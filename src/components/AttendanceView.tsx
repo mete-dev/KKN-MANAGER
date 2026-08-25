@@ -517,15 +517,7 @@ export default function AttendanceView({ getToken, participants }: Props) {
       const isDailyAttendance = upperTarget.includes('CHECKIN') || upperTarget.includes('CHECKOUT');
 
       if (isDailyAttendance) {
-        if (!isStayUser && !isSuperAdmin) {
-          const curWib = getWibStatus();
-          if (upperTarget.includes('CHECKIN') && !curWib.isCheckInOpen) {
-            isScanProcessingRef.current = false;
-            throw new Error('Absensi Check-In Gagal / Ditutup: Batas waktu Check-In pagi peserta Pulang-Pergi maksimal adalah pukul 09:00 WIB. Terlambat wajib mengajukan izin ke Kordes / Sekretaris.');
-          }
-        }
-
-        // Absen Harian: Wajib Selfie & GPS Posko (<= 500m)
+        // Absen Harian: Wajib Selfie & GPS Posko (<= 500m) - Fleksibel kapanpun!
         setPendingSessionId(targetSessionId);
         setScanStep('selfie');
         setGpsLoading(true);
@@ -1580,18 +1572,12 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-gray-900 text-sm">Check-In</h4>
-                      <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border shrink-0 ${
-                        isStayUser 
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
-                          : wibInfo.isCheckInOpen 
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-100' 
-                            : 'bg-rose-50 text-rose-800 border-rose-100'
-                      }`}>
-                        {isStayUser ? 'Fleksibel' : wibInfo.isCheckInOpen ? 'Buka' : 'Tutup'}
+                      <span className="text-[9px] font-bold px-2 py-0.2 rounded-full border shrink-0 bg-emerald-50 text-emerald-800 border-emerald-100">
+                        Buka (Fleksibel)
                       </span>
                     </div>
                     <p className="text-[11px] text-gray-500 truncate">
-                      {isStayUser ? 'Kedatangan / Aktif di Posko (Stay)' : 'Maksimal pukul 09:00 WIB'}
+                      Pencatatan kedatangan di Posko (Kapanpun / 24 Jam)
                     </p>
                   </div>
                 </div>
@@ -1631,18 +1617,12 @@ export default function AttendanceView({ getToken, participants }: Props) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-gray-900 text-sm">Check-Out</h4>
-                      <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border shrink-0 ${
-                        isStayUser 
-                          ? 'bg-blue-50 text-blue-800 border-blue-100'
-                          : wibInfo.isCheckOutOpen 
-                            ? 'bg-blue-50 text-blue-800 border-blue-100' 
-                            : 'bg-rose-50 text-rose-800 border-rose-100'
-                      }`}>
-                        {isStayUser ? 'Fleksibel' : wibInfo.isCheckOutOpen ? 'Buka' : 'Tutup'}
+                      <span className="text-[9px] font-bold px-2 py-0.2 rounded-full border shrink-0 bg-blue-50 text-blue-800 border-blue-100">
+                        Buka (Fleksibel)
                       </span>
                     </div>
                     <p className="text-[11px] text-gray-500 truncate">
-                      {isStayUser ? 'Izin Keluar / Pulang dari Posko' : 'Minimal pukul 19:00 WIB'}
+                      Pencatatan kepulangan dari Posko (Kapanpun / 24 Jam)
                     </p>
                   </div>
                 </div>
