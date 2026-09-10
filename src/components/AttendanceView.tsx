@@ -54,6 +54,46 @@ interface DailyReportRow {
   notes?: string;
 }
 
+interface MonthlyRecapSummary {
+  hadir: number;
+  izin: number;
+  sakit: number;
+  kerja: number;
+  alpa: number;
+  belumAbsen: number;
+  totalDays: number;
+  percentage: number;
+}
+
+interface MonthlyRecapUserRow {
+  no: number;
+  id: string;
+  name: string;
+  nim: string;
+  divisi: string;
+  stayType: string;
+  attendanceByDate: Record<string, { status: string; checkIn: string; checkOut: string; notes: string }>;
+  summary: MonthlyRecapSummary;
+}
+
+interface MonthlyRecapData {
+  startDate: string;
+  endDate: string;
+  days: string[];
+  report: MonthlyRecapUserRow[];
+  totalUsers: number;
+  stats: {
+    totalDays: number;
+    totalUsers: number;
+    totalHadir: number;
+    totalIzin: number;
+    totalSakit: number;
+    totalKerja: number;
+    totalAlpa: number;
+    averageRate: number;
+  };
+}
+
 interface Props {
   getToken: () => Promise<string>;
   participants: any[];
@@ -90,55 +130,47 @@ export default function AttendanceView({ getToken, participants }: Props) {
           });
         },
         () => {
-          // Retry with low accuracy if high accuracy fails or times out
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              resolve({
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                acc: pos.coords.accuracy
-              });
-            },
-            () => resolve(null),
-            { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-          );
+          resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
     });
   };
 
-  const captureSelfieFromVideo = (videoEl: HTMLVideoElement): string | null => {
+  const captureSelfieFromVideo = (videoElem: HTMLVideoElement): string | null => {
     try {
       const canvas = document.createElement('canvas');
-      const maxWidth = 380;
-      const scale = maxWidth / (videoEl.videoWidth || 600);
-      canvas.width = maxWidth;
-      canvas.height = (videoEl.videoHeight || 450) * scale;
+      const width = videoElem.videoWidth || 640;
+      const height = videoElem.videoHeight || 480;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
-      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.5);
-    } catch {
+      ctx.drawImage(videoElem, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', 0.85);
+    } catch (e) {
       return null;
     }
+  };
+
+  const parsePhotoUrl = (str?: string) => {
+    if (!str) return null;
+    const match = str.match(/\[PHOTO:(data:image\/[^;]+;base64,[^\]]+)\]/);
+    if (match) return match[1];
+    if (str.startsWith('data:image/')) return str;
+    return null;
   };
 
   const parseGpsCoords = (str?: string) => {
     if (!str) return null;
     const match = str.match(/📍\s*GPS:\s*([-\d.]+),\s*([-\d.]+)/);
-    if (match) return { lat: match[1], lng: match[2] };
+    if (match) {
+      return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    }
     return null;
   };
 
-  const parsePhotoUrl = (str?: string) => {
-    if (!str) return null;
-    const match = str.match(/\[PHOTO:(data:image\/[^\]]+)\]/);
-    if (match) return match[1];
-    return null;
-  };
-
-  const getCleanNotes = (str?: string): string => {
+  const getCleanNotes = (str?: string) => {
     if (!str) return '';
     return str
       .replace(/\[PHOTO:[^\]]+\]/g, '')
@@ -149,8 +181,8 @@ export default function AttendanceView({ getToken, participants }: Props) {
       .trim();
   };
 
-  // Active Sub Tab: 'kegiatan' | 'harian'
-  const [activeSubTab, setActiveSubTab] = useState<'kegiatan' | 'harian'>('kegiatan');
+  // Active Sub Tab: 'kegiatan' | 'harian' | 'rekap'
+  const [activeSubTab, setActiveSubTab] = useState<'kegiatan' | 'harian' | 'rekap'>('kegiatan');
 
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,6 +245,13 @@ export default function AttendanceView({ getToken, participants }: Props) {
   const [dailyReportDate, setDailyReportDate] = useState<string>(getTodayWib());
   const [dailyReportData, setDailyReportData] = useState<DailyReportRow[]>([]);
   const [dailyReportLoading, setDailyReportLoading] = useState<boolean>(false);
+
+  // --- MONTHLY RECAP STATES (Default: 1 sd 31 Agustus) ---
+  const [monthlyStartDate, setMonthlyStartDate] = useState<string>('2026-08-01');
+  const [monthlyEndDate, setMonthlyEndDate] = useState<string>('2026-08-31');
+  const [monthlyReportData, setMonthlyReportData] = useState<MonthlyRecapData | null>(null);
+  const [monthlyReportLoading, setMonthlyReportLoading] = useState<boolean>(false);
+  const [monthlySearchQuery, setMonthlySearchQuery] = useState<string>('');
 
   // --- EDIT DAILY ATTENDANCE STATES ---
   const [editingDailyRow, setEditingDailyRow] = useState<DailyReportRow | null>(null);
@@ -347,6 +386,30 @@ export default function AttendanceView({ getToken, participants }: Props) {
     }
   };
 
+  // Fetch monthly recap
+  const fetchMonthlyRecap = async (start?: string, end?: string) => {
+    const sDate = start || monthlyStartDate;
+    const eDate = end || monthlyEndDate;
+    setMonthlyReportLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/attendance/recap-monthly?startDate=${encodeURIComponent(sDate)}&endDate=${encodeURIComponent(eDate)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          setMonthlyReportData(data);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed fetching monthly recap:", e);
+    } finally {
+      setMonthlyReportLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchSessions();
   }, []);
@@ -364,8 +427,10 @@ export default function AttendanceView({ getToken, participants }: Props) {
   useEffect(() => {
     if (activeSubTab === 'harian') {
       fetchDailyReport();
+    } else if (activeSubTab === 'rekap') {
+      fetchMonthlyRecap();
     }
-  }, [activeSubTab, dailyReportDate]);
+  }, [activeSubTab, dailyReportDate, monthlyStartDate, monthlyEndDate]);
 
   const isScanProcessingRef = useRef(false);
 
@@ -957,6 +1022,178 @@ export default function AttendanceView({ getToken, participants }: Props) {
     doc.save(`laporan_absensi_harian_${dailyReportDate}.pdf`);
   };
 
+  // EXPORT FUNCTIONS FOR MONTHLY RECAP (Matrix Table & Summary)
+  const exportMonthlyRecapToExcel = () => {
+    if (!monthlyReportData || monthlyReportData.report.length === 0) {
+      alert('Tidak ada data rekap bulanan untuk diekspor.');
+      return;
+    }
+
+    const { days, report, startDate, endDate } = monthlyReportData;
+    const excelRows = report.map((user: MonthlyRecapUserRow, idx: number) => {
+      const row: any = {
+        'No': idx + 1,
+        'Nama Anggota': user.name,
+        'NIM': user.nim || '-',
+        'Divisi': user.divisi || 'Anggota',
+        'Tipe Keberadaan': user.stayType === 'stay' ? 'Stay Posko' : 'Pulang-Pergi'
+      };
+
+      days.forEach((day: string) => {
+        const dayNum = parseInt(day.split('-')[2], 10);
+        const att = user.attendanceByDate[day];
+        let symbol = '-';
+        if (att) {
+          if (att.status === 'Hadir') symbol = 'H';
+          else if (att.status === 'Izin') symbol = 'I';
+          else if (att.status === 'Sakit') symbol = 'S';
+          else if (att.status === 'Kerja') symbol = 'K';
+          else if (att.status === 'Alpa') symbol = 'A';
+        }
+        row[`Tgl ${dayNum}`] = symbol;
+      });
+
+      row['Total Hadir (H)'] = user.summary.hadir;
+      row['Total Izin (I)'] = user.summary.izin;
+      row['Total Sakit (S)'] = user.summary.sakit;
+      row['Total Kerja (K)'] = user.summary.kerja;
+      row['Total Alpa (A)'] = user.summary.alpa;
+      row['% Kehadiran'] = `${user.summary.percentage}%`;
+
+      return row;
+    });
+
+    const ws = XLSX.utils.json_to_sheet([]);
+    XLSX.utils.sheet_add_aoa(ws, [
+      ['REKAPITULASI ABSENSI HARIAN KKN DESA KANDANGAN'],
+      [`Periode: ${startDate} s/d ${endDate}`],
+      [`Dicetak pada: ${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')}`],
+      ['Keterangan Simbol: H = Hadir, I = Izin, S = Sakit, K = Kerja, A = Alpa, - = Belum Absen'],
+      []
+    ], { origin: 'A1' });
+
+    XLSX.utils.sheet_add_json(ws, excelRows, { origin: 'A6', skipHeader: false });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi Harian');
+    XLSX.writeFile(wb, `rekap_absensi_harian_${startDate}_sd_${endDate}.xlsx`);
+  };
+
+  const exportMonthlyRecapToPDF = () => {
+    if (!monthlyReportData || monthlyReportData.report.length === 0) {
+      alert('Tidak ada data rekap bulanan untuk diekspor.');
+      return;
+    }
+
+    const { days, report, startDate, endDate, stats } = monthlyReportData;
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+    
+    doc.setFillColor(16, 185, 129);
+    doc.rect(0, 0, 297, 28, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.text('REKAPITULASI ABSENSI HARIAN KKN DESA KANDANGAN', 14, 12);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Periode: ${startDate} s/d ${endDate} (${days.length} Hari) | Rata-rata Kehadiran: ${stats.averageRate}% | Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 20);
+
+    let y = 36;
+    doc.setFillColor(30, 41, 59);
+    doc.rect(10, y, 277, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+
+    doc.text('No', 12, y + 4.5);
+    doc.text('Nama Peserta', 20, y + 4.5);
+    doc.text('Divisi', 85, y + 4.5);
+    
+    let dayX = 120;
+    const dayColWidth = Math.min(4, 120 / days.length);
+    days.forEach(day => {
+      const dNum = parseInt(day.split('-')[2], 10);
+      doc.text(String(dNum), dayX, y + 4.5);
+      dayX += dayColWidth;
+    });
+
+    doc.text('H', 246, y + 4.5);
+    doc.text('I', 252, y + 4.5);
+    doc.text('S', 258, y + 4.5);
+    doc.text('K', 264, y + 4.5);
+    doc.text('A', 270, y + 4.5);
+    doc.text('%', 277, y + 4.5);
+
+    doc.setTextColor(51, 65, 85);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+
+    report.forEach((user: MonthlyRecapUserRow, index: number) => {
+      y += 5.5;
+      if (y > 195) {
+        doc.addPage('landscape');
+        y = 15;
+        doc.setFillColor(30, 41, 59);
+        doc.rect(10, y, 277, 7, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.text('No', 12, y + 4.5);
+        doc.text('Nama Peserta', 20, y + 4.5);
+        doc.text('Divisi', 85, y + 4.5);
+        let dX = 120;
+        days.forEach(day => {
+          const dNum = parseInt(day.split('-')[2], 10);
+          doc.text(String(dNum), dX, y + 4.5);
+          dX += dayColWidth;
+        });
+        doc.text('H', 246, y + 4.5);
+        doc.text('I', 252, y + 4.5);
+        doc.text('S', 258, y + 4.5);
+        doc.text('K', 264, y + 4.5);
+        doc.text('A', 270, y + 4.5);
+        doc.text('%', 277, y + 4.5);
+        doc.setTextColor(51, 65, 85);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        y += 5.5;
+      }
+
+      if (index % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(10, y - 4, 277, 5.5, 'F');
+      }
+
+      doc.text(String(index + 1), 12, y);
+      doc.text(user.name.length > 32 ? user.name.substring(0, 30) + '..' : user.name, 20, y);
+      doc.text(user.divisi || '-', 85, y);
+
+      let dX = 120;
+      days.forEach(day => {
+        const att = user.attendanceByDate[day];
+        let sym = '-';
+        if (att) {
+          if (att.status === 'Hadir') sym = 'H';
+          else if (att.status === 'Izin') sym = 'I';
+          else if (att.status === 'Sakit') sym = 'S';
+          else if (att.status === 'Kerja') sym = 'K';
+          else if (att.status === 'Alpa') sym = 'A';
+        }
+        doc.text(sym, dX, y);
+        dX += dayColWidth;
+      });
+
+      doc.text(String(user.summary.hadir), 246, y);
+      doc.text(String(user.summary.izin), 252, y);
+      doc.text(String(user.summary.sakit), 258, y);
+      doc.text(String(user.summary.kerja), 264, y);
+      doc.text(String(user.summary.alpa), 270, y);
+      doc.text(`${user.summary.percentage}%`, 276, y);
+    });
+
+    doc.save(`rekap_absensi_harian_${startDate}_sd_${endDate}.pdf`);
+  };
+
   // EXPORT FUNCTIONS FOR SESSION REKAP
   const exportSessionReportToExcel = (session: any, records: any[]) => {
     if (!session || records.length === 0) {
@@ -1125,31 +1362,43 @@ export default function AttendanceView({ getToken, participants }: Props) {
         </div>
       </div>
 
-      {/* SUB TAB SELECTOR: KEGIATAN VS HARIAN */}
+      {/* SUB TAB SELECTOR: KEGIATAN VS HARIAN VS REKAP BULANAN */}
       {view === 'list' && (
-        <div className="flex bg-gray-100/80 p-1.5 rounded-2xl w-full sm:w-fit border border-gray-200/60 shadow-2xs">
+        <div className="flex bg-gray-100/80 p-1.5 rounded-2xl w-full sm:w-fit border border-gray-200/60 shadow-2xs gap-1">
           <button
             onClick={() => setActiveSubTab('kegiatan')}
-            className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
               activeSubTab === 'kegiatan'
                 ? 'bg-white text-emerald-800 shadow-sm border border-emerald-100'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
             <QrCode className="w-4 h-4 text-emerald-600" />
-            <span>Absensi Kegiatan / Proker</span>
+            <span>Absensi Kegiatan</span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('harian')}
-            className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
               activeSubTab === 'harian'
                 ? 'bg-white text-emerald-800 shadow-sm border border-emerald-100'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
             <Clock className="w-4 h-4 text-blue-600" />
-            <span>Absensi Harian (Check-In & Check-Out)</span>
+            <span>Presensi Harian</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('rekap')}
+            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+              activeSubTab === 'rekap'
+                ? 'bg-white text-purple-800 shadow-sm border border-purple-100'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-purple-600" />
+            <span>Rekap Harian (1 - 31 Ags)</span>
           </button>
         </div>
       )}
@@ -1865,6 +2114,269 @@ export default function AttendanceView({ getToken, participants }: Props) {
                         </tr>
                       );
                     })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB TAB 3: REKAPITULASI BULANAN (1 SD 31 AGUSTUS) */}
+      {view === 'list' && activeSubTab === 'rekap' && (
+        <div className="space-y-6">
+          {/* CONTROL CARD */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-purple-600" />
+                  Rekapitulasi Absensi Harian Periode Bulanan
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Matriks presensi harian seluruh anggota per tanggal (1 - 31 Agustus), total kehadiran, dan persentase
+                </p>
+              </div>
+
+              {/* DATE RANGE FILTER & EXPORT BUTTONS */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-1.5 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase px-1">Dari:</span>
+                    <input
+                      type="date"
+                      value={monthlyStartDate}
+                      onChange={e => setMonthlyStartDate(e.target.value)}
+                      className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 outline-none"
+                    />
+                  </div>
+                  <span className="text-gray-400 text-xs">s/d</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase px-1">Sampai:</span>
+                    <input
+                      type="date"
+                      value={monthlyEndDate}
+                      onChange={e => setMonthlyEndDate(e.target.value)}
+                      className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-700 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setMonthlyStartDate('2026-08-01');
+                    setMonthlyEndDate('2026-08-31');
+                  }}
+                  className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold py-2 px-3 rounded-xl text-xs transition-all flex items-center gap-1 cursor-pointer"
+                  title="Tampilkan Periode 1 s/d 31 Agustus 2026"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <span>1 - 31 Ags</span>
+                </button>
+
+                <button
+                  onClick={exportMonthlyRecapToExcel}
+                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Ekspor Matriks Rekap ke Excel"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <span>Excel</span>
+                </button>
+
+                <button
+                  onClick={exportMonthlyRecapToPDF}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 font-bold py-2 px-3.5 rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Ekspor Rekap ke PDF"
+                >
+                  <FileText className="w-4 h-4 text-rose-600" />
+                  <span>PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* QUICK STATS CARDS */}
+            {monthlyReportData && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5 pt-2">
+                <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100 text-center">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Total Hari</span>
+                  <span className="text-base font-black text-gray-900">{monthlyReportData.stats.totalDays} Hari</span>
+                </div>
+                <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100 text-center">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Peserta</span>
+                  <span className="text-base font-black text-gray-900">{monthlyReportData.stats.totalUsers} Orang</span>
+                </div>
+                <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-100 text-center">
+                  <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block">Total Hadir</span>
+                  <span className="text-base font-black text-emerald-700">{monthlyReportData.stats.totalHadir}</span>
+                </div>
+                <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-100 text-center">
+                  <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Total Izin</span>
+                  <span className="text-base font-black text-amber-700">{monthlyReportData.stats.totalIzin}</span>
+                </div>
+                <div className="bg-purple-50/70 p-2.5 rounded-xl border border-purple-100 text-center">
+                  <span className="text-[10px] text-purple-800 font-bold uppercase tracking-wider block">Total Sakit</span>
+                  <span className="text-base font-black text-purple-700">{monthlyReportData.stats.totalSakit}</span>
+                </div>
+                <div className="bg-blue-50/70 p-2.5 rounded-xl border border-blue-100 text-center">
+                  <span className="text-[10px] text-blue-800 font-bold uppercase tracking-wider block">Total Kerja</span>
+                  <span className="text-base font-black text-blue-700">{monthlyReportData.stats.totalKerja}</span>
+                </div>
+                <div className="bg-emerald-600 text-white p-2.5 rounded-xl text-center col-span-2 sm:col-span-4 md:col-span-1 shadow-xs">
+                  <span className="text-[10px] text-emerald-100 font-bold uppercase tracking-wider block">Rata-rata Hadir</span>
+                  <span className="text-base font-black text-white">{monthlyReportData.stats.averageRate}%</span>
+                </div>
+              </div>
+            )}
+
+            {/* SEARCH & FILTER BAR */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1 border-t border-gray-100">
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama atau NIM anggota..."
+                  value={monthlySearchQuery}
+                  onChange={e => setMonthlySearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
+
+              {/* LEGEND BADGES */}
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-gray-600">
+                <span className="text-gray-400 font-medium">Keterangan:</span>
+                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">H = Hadir</span>
+                <span className="bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">I = Izin</span>
+                <span className="bg-purple-50 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded">S = Sakit</span>
+                <span className="bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded">K = Kerja</span>
+                <span className="bg-rose-50 text-rose-800 border border-rose-200 px-1.5 py-0.5 rounded">A = Alpa</span>
+                <span className="bg-gray-100 text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded">- = Kosong</span>
+              </div>
+            </div>
+
+            {/* REKAP MATRIX TABLE */}
+            <div className="overflow-x-auto rounded-2xl border border-gray-100 max-h-[600px]">
+              <table className="w-full text-left text-xs border-collapse bg-white">
+                <thead className="sticky top-0 z-20 bg-gray-900 text-white font-bold uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th className="p-2.5 text-center w-10 sticky left-0 bg-gray-900 z-30 shadow-xs">No</th>
+                    <th className="p-2.5 min-w-[180px] sticky left-10 bg-gray-900 z-30 shadow-xs">Nama & Identitas</th>
+                    {monthlyReportData?.days.map(day => {
+                      const dayNum = parseInt(day.split('-')[2], 10);
+                      return (
+                        <th key={day} className="p-1.5 text-center min-w-[32px] w-8 border-l border-gray-800/60 font-mono text-[11px]" title={`Tanggal ${day}`}>
+                          {dayNum}
+                        </th>
+                      );
+                    })}
+                    <th className="p-2 text-center w-10 bg-emerald-950/80 text-emerald-300 border-l border-gray-800" title="Total Hadir">H</th>
+                    <th className="p-2 text-center w-10 bg-amber-950/80 text-amber-300 border-l border-gray-800" title="Total Izin">I</th>
+                    <th className="p-2 text-center w-10 bg-purple-950/80 text-purple-300 border-l border-gray-800" title="Total Sakit">S</th>
+                    <th className="p-2 text-center w-10 bg-blue-950/80 text-blue-300 border-l border-gray-800" title="Total Kerja">K</th>
+                    <th className="p-2 text-center w-10 bg-rose-950/80 text-rose-300 border-l border-gray-800" title="Total Alpa">A</th>
+                    <th className="p-2.5 text-center min-w-[80px] bg-gray-950 text-emerald-400 border-l border-gray-800">% Hadir</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium">
+                  {monthlyReportLoading ? (
+                    <tr>
+                      <td colSpan={10 + (monthlyReportData?.days.length || 31)} className="p-12 text-center text-gray-400">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-600 mb-2" />
+                        Memuat data rekapitulasi harian...
+                      </td>
+                    </tr>
+                  ) : !monthlyReportData || monthlyReportData.report.length === 0 ? (
+                    <tr>
+                      <td colSpan={10 + (monthlyReportData?.days.length || 31)} className="p-12 text-center text-gray-400">
+                        Tidak ada data anggota untuk periode {monthlyStartDate} s/d {monthlyEndDate}.
+                      </td>
+                    </tr>
+                  ) : (
+                    monthlyReportData.report
+                      .filter(user => {
+                        if (!monthlySearchQuery) return true;
+                        const q = monthlySearchQuery.toLowerCase();
+                        return (
+                          user.name.toLowerCase().includes(q) ||
+                          (user.nim && user.nim.includes(q)) ||
+                          (user.divisi && user.divisi.toLowerCase().includes(q))
+                        );
+                      })
+                      .map((user, idx) => {
+                        return (
+                          <tr key={user.id} className="hover:bg-purple-50/30 transition-colors">
+                            <td className="p-2.5 text-center font-bold text-gray-500 sticky left-0 bg-white group-hover:bg-purple-50/30 z-10">{idx + 1}</td>
+                            <td className="p-2.5 sticky left-10 bg-white group-hover:bg-purple-50/30 z-10">
+                              <span className="font-bold text-gray-900 block truncate max-w-[170px]" title={user.name}>{user.name}</span>
+                              <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                <span className="font-mono">{user.nim || '-'}</span>
+                                <span>•</span>
+                                <span className="truncate max-w-[90px]">{user.divisi}</span>
+                              </div>
+                            </td>
+
+                            {/* PER DAY CELLS */}
+                            {monthlyReportData.days.map(day => {
+                              const att = user.attendanceByDate[day];
+                              let badgeStyle = 'text-gray-300 bg-gray-50/50';
+                              let symbol = '-';
+                              let tooltipText = `${day}: Belum Absen`;
+
+                              if (att && att.status && att.status !== 'Belum Absen') {
+                                if (att.status === 'Hadir') {
+                                  badgeStyle = 'bg-emerald-100 text-emerald-800 font-black';
+                                  symbol = 'H';
+                                  tooltipText = `${day}: Hadir (In: ${att.checkIn}, Out: ${att.checkOut})`;
+                                } else if (att.status === 'Izin') {
+                                  badgeStyle = 'bg-amber-100 text-amber-800 font-black';
+                                  symbol = 'I';
+                                  tooltipText = `${day}: Izin ${att.notes ? `(${att.notes})` : ''}`;
+                                } else if (att.status === 'Sakit') {
+                                  badgeStyle = 'bg-purple-100 text-purple-800 font-black';
+                                  symbol = 'S';
+                                  tooltipText = `${day}: Sakit ${att.notes ? `(${att.notes})` : ''}`;
+                                } else if (att.status === 'Kerja') {
+                                  badgeStyle = 'bg-blue-100 text-blue-800 font-black';
+                                  symbol = 'K';
+                                  tooltipText = `${day}: Kerja ${att.notes ? `(${att.notes})` : ''}`;
+                                } else if (att.status === 'Alpa') {
+                                  badgeStyle = 'bg-rose-100 text-rose-800 font-black';
+                                  symbol = 'A';
+                                  tooltipText = `${day}: Alpa`;
+                                }
+                              }
+
+                              return (
+                                <td key={day} className="p-1 text-center border-l border-gray-100">
+                                  <span
+                                    className={`w-6 h-6 rounded-md inline-flex items-center justify-center text-[10px] transition-transform hover:scale-125 cursor-default ${badgeStyle}`}
+                                    title={tooltipText}
+                                  >
+                                    {symbol}
+                                  </span>
+                                </td>
+                              );
+                            })}
+
+                            {/* SUMMARY STATS PER USER */}
+                            <td className="p-2 text-center font-bold text-emerald-700 bg-emerald-50/40 border-l border-gray-100">{user.summary.hadir}</td>
+                            <td className="p-2 text-center font-bold text-amber-700 bg-amber-50/40 border-l border-gray-100">{user.summary.izin}</td>
+                            <td className="p-2 text-center font-bold text-purple-700 bg-purple-50/40 border-l border-gray-100">{user.summary.sakit}</td>
+                            <td className="p-2 text-center font-bold text-blue-700 bg-blue-50/40 border-l border-gray-100">{user.summary.kerja}</td>
+                            <td className="p-2 text-center font-bold text-rose-700 bg-rose-50/40 border-l border-gray-100">{user.summary.alpa}</td>
+                            <td className="p-2.5 text-center border-l border-gray-100">
+                              <div className="flex items-center gap-1.5 justify-center">
+                                <div className="w-10 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className="bg-emerald-600 h-1.5 rounded-full"
+                                    style={{ width: `${Math.min(100, user.summary.percentage)}%` }}
+                                  />
+                                </div>
+                                <span className="font-black text-gray-900 text-[11px]">{user.summary.percentage}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                   )}
                 </tbody>
               </table>

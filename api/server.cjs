@@ -65342,6 +65342,125 @@ app.get("/api/attendance/daily-report", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Gagal mengambil laporan harian." });
   }
 });
+app.get("/api/attendance/recap-monthly", requireAuth, async (req, res) => {
+  try {
+    const startDate = req.query.startDate || "2026-08-01";
+    const endDate = req.query.endDate || "2026-08-31";
+    const allUsers = await repositoryGetUsers();
+    const allSessions = await repositoryGetAttendanceSessions();
+    const allRecords = await repositoryGetAttendanceRecords();
+    const days = [];
+    const current = new Date(startDate);
+    const stop = new Date(endDate);
+    while (current <= stop) {
+      days.push(current.toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" }));
+      current.setDate(current.getDate() + 1);
+    }
+    const dailySessions = allSessions.filter(
+      (s) => (s.sessionType === "daily" || s.title && s.title.toLowerCase().includes("harian")) && s.date >= startDate && s.date <= endDate
+    );
+    const recordsByDate = {};
+    for (const day of days) {
+      const sess = dailySessions.find((s) => s.date === day);
+      if (sess) {
+        recordsByDate[day] = allRecords.filter((r) => r.sessionId === sess.id);
+      } else {
+        recordsByDate[day] = [];
+      }
+    }
+    let totalAllHadir = 0;
+    let totalAllIzin = 0;
+    let totalAllSakit = 0;
+    let totalAllKerja = 0;
+    let totalAllAlpa = 0;
+    const report = allUsers.map((u, idx) => {
+      const uNameNorm = (u.name || "").toLowerCase().trim();
+      const attendanceByDate = {};
+      let hadirCount = 0;
+      let izinCount = 0;
+      let sakitCount = 0;
+      let kerjaCount = 0;
+      let alpaCount = 0;
+      let belumAbsenCount = 0;
+      days.forEach((day) => {
+        const recs = recordsByDate[day] || [];
+        const directRec = recs.find(
+          (r) => r.userId && r.userId === u.id || uNameNorm && r.name && r.name.toLowerCase().trim() === uNameNorm
+        );
+        if (directRec && directRec.status && directRec.status !== "Belum Absen") {
+          const st = directRec.status;
+          if (st === "Hadir") hadirCount++;
+          else if (st === "Izin") izinCount++;
+          else if (st === "Sakit") sakitCount++;
+          else if (st === "Kerja") kerjaCount++;
+          else if (st === "Alpa") alpaCount++;
+          attendanceByDate[day] = {
+            status: st,
+            checkIn: directRec.checkInTime || parseTimeFromNotes(directRec.notes, "Check-In") || "-",
+            checkOut: directRec.checkOutTime || parseTimeFromNotes(directRec.notes, "Check-Out") || "-",
+            notes: directRec.notes || ""
+          };
+        } else {
+          belumAbsenCount++;
+          attendanceByDate[day] = {
+            status: "Belum Absen",
+            checkIn: "-",
+            checkOut: "-",
+            notes: ""
+          };
+        }
+      });
+      totalAllHadir += hadirCount;
+      totalAllIzin += izinCount;
+      totalAllSakit += sakitCount;
+      totalAllKerja += kerjaCount;
+      totalAllAlpa += alpaCount;
+      const effectiveDays = days.length;
+      const percentage = effectiveDays > 0 ? (hadirCount / effectiveDays * 100).toFixed(1) : "0";
+      return {
+        no: idx + 1,
+        id: u.id,
+        name: u.name,
+        nim: u.nim || "-",
+        divisi: u.role || "Anggota",
+        stayType: u.stayType || "pp",
+        attendanceByDate,
+        summary: {
+          hadir: hadirCount,
+          izin: izinCount,
+          sakit: sakitCount,
+          kerja: kerjaCount,
+          alpa: alpaCount,
+          belumAbsen: belumAbsenCount,
+          totalDays: effectiveDays,
+          percentage: Number(percentage)
+        }
+      };
+    });
+    const totalSlots = allUsers.length * days.length;
+    const avgRate = totalSlots > 0 ? (totalAllHadir / totalSlots * 100).toFixed(1) : "0";
+    res.json({
+      startDate,
+      endDate,
+      days,
+      report,
+      totalUsers: allUsers.length,
+      stats: {
+        totalDays: days.length,
+        totalUsers: allUsers.length,
+        totalHadir: totalAllHadir,
+        totalIzin: totalAllIzin,
+        totalSakit: totalAllSakit,
+        totalKerja: totalAllKerja,
+        totalAlpa: totalAllAlpa,
+        averageRate: Number(avgRate)
+      }
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Gagal mengambil rekap bulanan." });
+  }
+});
 app.put("/api/attendance/daily-report", requireAuth, async (req, res) => {
   try {
     const currentUser = await repositoryGetUserById(req.user.id);
